@@ -12,6 +12,7 @@ class BatchService:
         with db.atomic() as txn:
             for idx, data in enumerate(data_list):
                 try:
+                    data = dict(data)  # 浅拷贝：pop 不污染调用者的原始 list 项
                     entity_id = EntityStorage.create(data)
                     tags = data.pop('tags', [])
                     if tags:

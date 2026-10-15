@@ -1,7 +1,7 @@
 /* ============================================================
    programs.js - 控制台"程序"面板：运行中的程序实例（手机后台式任务卡）
    - 数据来自 AppFrame 的实例表（打开即常驻，切走挂后台）
-   - 操作：切到前台 / 终止（销毁实例）
+   - 操作：切到前台 / 终止（销毁实例）/ 勾选后批量终止
    ============================================================ */
 (function () {
     const iChen = window.iChen = window.iChen || {};
@@ -11,10 +11,20 @@
         '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
         + '<rect x="8" y="8" width="48" height="48" rx="12" fill="#dbe7fb"/></svg>')));
 
-    function fmtTime(ts) {
-        const d = new Date(ts);
-        const p = (n) => (n < 10 ? '0' + n : '' + n);
-        return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    // 批量终止的勾选集（运行时记忆；实例消失时自动清理）
+    const selected = new Set();
+
+    function syncBatchBar(listLen) {
+        const killBtn = $('btn-programs-kill-selected');
+        const allBtn = $('btn-programs-select-all');
+        if (killBtn) {
+            killBtn.disabled = selected.size === 0;
+            killBtn.textContent = selected.size ? '终止选中 (' + selected.size + ')' : '终止选中';
+        }
+        if (allBtn) {
+            allBtn.textContent = (listLen > 0 && selected.size === listLen) ? '取消全选' : '全选';
+            allBtn.disabled = listLen === 0;
+        }
     }
 
     function render() {
@@ -24,6 +34,10 @@
         const empty = $('programs-empty');
         if (empty) empty.hidden = list.length > 0;
 
+        // 清理已终止实例的勾选残留
+        const alive = new Set(list.map((p) => p.id));
+        Array.from(selected).forEach((id) => { if (!alive.has(id)) selected.delete(id); });
+
         box.innerHTML = '';
         list.forEach((p) => {
             const card = document.createElement('div');
@@ -31,6 +45,15 @@
 
             const head = document.createElement('div');
             head.className = 'pc-head';
+            const check = document.createElement('input');
+            check.type = 'checkbox';
+            check.className = 'pc-check';
+            check.title = '勾选后可批量终止';
+            check.checked = selected.has(p.id);
+            check.addEventListener('change', () => {
+                if (check.checked) selected.add(p.id); else selected.delete(p.id);
+                syncBatchBar(list.length);
+            });
             const img = document.createElement('img');
             img.className = 'pc-icon';
             img.src = p.icon || DEFAULT_ICON;
@@ -42,10 +65,12 @@
             name.textContent = p.name;
             const sub = document.createElement('div');
             sub.className = 'pc-sub';
-            sub.textContent = (p.zone ? p.zone + ' · ' : '') + '启动 ' + fmtTime(p.opened_at)
+            sub.textContent = (p.zone ? p.zone + ' · ' : '') + '已运行 '
+                + iChen.UI.fmtDuration(p.opened_at)
                 + (p.active ? ' · 前台' : ' · 后台');
             meta.appendChild(name);
             meta.appendChild(sub);
+            head.appendChild(check);
             head.appendChild(img);
             head.appendChild(meta);
 
@@ -87,12 +112,39 @@
             card.appendChild(actions);
             box.appendChild(card);
         });
+        syncBatchBar(list.length);
+    }
+
+    async function killSelected() {
+        const ids = Array.from(selected);
+        if (!ids.length) return;
+        if (!await iChen.Dialog.confirm(
+            '批量终止 ' + ids.length + ' 个程序？它们将结束运行，未保存的数据会丢失。', '确认批量终止')) return;
+        let done = 0;
+        for (const id of ids) {
+            if (iChen.AppFrame && await iChen.AppFrame.terminate(id)) done += 1;
+        }
+        selected.clear();
+        if (iChen.UI) iChen.UI.showToast('已批量终止 ' + done + ' 个程序');
+        render();
+    }
+
+    function toggleSelectAll() {
+        const list = (iChen.AppFrame && iChen.AppFrame.list) ? iChen.AppFrame.list() : [];
+        if (!list.length) return;
+        if (selected.size === list.length) selected.clear();
+        else list.forEach((p) => selected.add(p.id));
+        render();
     }
 
     iChen.Programs = {
         init() {
             const b = $('btn-programs-refresh');
             if (b) b.addEventListener('click', render);
+            const allBtn = $('btn-programs-select-all');
+            if (allBtn) allBtn.addEventListener('click', toggleSelectAll);
+            const killBtn = $('btn-programs-kill-selected');
+            if (killBtn) killBtn.addEventListener('click', killSelected);
             // 实例增减 / 前后台变化时，若面板可见则刷新
             document.addEventListener('ichen:instances-changed', () => {
                 const view = $('processes-view');

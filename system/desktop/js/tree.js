@@ -24,6 +24,9 @@
     let currentZone = null;
     let currentZoneName = '';
     let currentTree = [];
+    // 文件夹收起状态（运行时记忆，仅存于当前页面生命周期）：
+    // key 为节点 path；默认全部展开，用户收起的记住，切分区/重渲染后恢复
+    const collapsedFolders = new Set();
 
     /* ---------- 行元素 ---------- */
     function iconEl(node) {
@@ -78,10 +81,14 @@
     function renderList(container, nodes) {
         nodes.forEach((node) => {
             if (node.type === 'folder') {
+                const key = node.path || node.name;
+                const open = !collapsedFolders.has(key);
                 const box = document.createElement('div');
-                box.appendChild(folderRow(node, true));
+                box.appendChild(folderRow(node, open));
                 const childBox = document.createElement('div');
                 childBox.className = 'trow-children';
+                // 收起状态不仅恢复箭头（.open），子盒也要同步隐藏——否则重渲染后子项又全部露出
+                if (!open) childBox.style.display = 'none';
                 renderList(childBox, node.children || []);
                 box.appendChild(childBox);
                 container.appendChild(box);
@@ -141,7 +148,14 @@
         if (!row) return;
         if (row.dataset.kind === 'folder') {
             row.classList.toggle('open');
-            row.setAttribute('aria-expanded', row.classList.contains('open') ? 'true' : 'false');
+            const open = row.classList.contains('open');
+            row.setAttribute('aria-expanded', open ? 'true' : 'false');
+            const node = row._node;
+            const key = node ? (node.path || node.name) : row.dataset.path;
+            if (key) {
+                if (open) collapsedFolders.delete(key);
+                else collapsedFolders.add(key);
+            }
             const childBox = row.nextElementSibling;
             if (childBox && childBox.classList.contains('trow-children')) {
                 childBox.style.display = childBox.style.display === 'none' ? '' : 'none';
@@ -168,8 +182,9 @@
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
+                { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '删除', action: a.uninstall, danger: true },
-            ], e.clientX, e.clientY);
+            ], e.clientX, e.clientY, appRow);
             return;
         }
         // 文件夹行右键（分类）：重命名 / 删除
@@ -185,11 +200,19 @@
                 if (iChen.UI) iChen.UI.showToast(r && r.ok ? '已改名：' + v.trim() : ('改名失败：' + (r && r.error)));
                 if (r && r.ok) afterChange();
             };
+            const setIcon = async () => {
+                const picked = await iChen.PyAPI.pickFiles('open', false, 'svg', '');
+                if (!picked || !picked.ok || !(picked.paths || []).length) return;
+                const r = await iChen.PyAPI.setFolderIcon(node.path, picked.paths[0]);
+                if (iChen.UI) iChen.UI.showToast(r && r.ok ? '已更新图标' : ('图标更新失败：' + (r && r.error)));
+                if (r && r.ok) afterChange();
+            };
             iChen.UI.showContextMenu([
                 {
                     label: '新建 App',
                     submenu: [
                         { label: '导入文件夹', action: () => iChen.AppMgmt.newApp('import', node.path) },
+                        { label: '导入 miniapp 包', action: () => iChen.AppMgmt.newApp('importMiniapp', node.path) },
                         { label: '导入 HTML 文件', action: () => iChen.AppMgmt.newApp('importHtml', node.path) },
                         { label: '输入 HTML', action: () => iChen.AppMgmt.newApp('html', node.path) },
                         { label: '输入 URL', action: () => iChen.AppMgmt.newApp('url', node.path) },
@@ -197,8 +220,9 @@
                 },
                 { label: '新建文件夹', action: () => iChen.AppMgmt.newFolder(node.path) },
                 { label: '重命名', action: rename },
+                { label: '修改图标', action: setIcon },
                 { label: '删除文件夹', danger: true, action: () => iChen.AppMgmt.deleteFolder(node, false, afterChange) },
-            ], e.clientX, e.clientY);
+            ], e.clientX, e.clientY, folderRow);
             return;
         }
         // 空白处右键 → 新建菜单
@@ -208,13 +232,12 @@
         }
     }
 
-    /* ---------- 分区标题右键（Tab 级操作） ---------- */
-    function onZoneTitleContextMenu(e) {
-        if (!currentZone) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const zonePath = currentZone;
+    /* ---------- 分区菜单（Tab 栏图标右键，v3.1.2 起从列表标题迁来） ---------- */
+    function showZoneMenu(zoneKey, zoneName, x, y) {
+        const zonePath = zoneKey;
         const afterChange = () => { if (iChen.Shell) iChen.Shell.reload(); };
+        // 删除分区需要 children 提示"有内容"：仅当前展示的分区拿得到，其余传空
+        const children = (zoneKey === currentZone) ? currentTree : null;
         iChen.UI.showContextMenu([
             {
                 label: '新建 App',
@@ -229,9 +252,9 @@
             {
                 label: '删除分区', danger: true,
                 action: () => iChen.AppMgmt.deleteFolder(
-                    { name: currentZoneName || zonePath, path: zonePath, children: currentTree }, true, afterChange),
+                    { name: zoneName || zonePath, path: zonePath, children: children }, true, afterChange),
             },
-        ], e.clientX, e.clientY);
+        ], x, y);
     }
 
     /* ---------- 暴露 ---------- */
@@ -239,9 +262,8 @@
         init() {
             $('app-tree').addEventListener('click', onTreeClick);
             $('app-tree').addEventListener('contextmenu', onContextMenu);
-            const title = $('listpane-title');
-            if (title) title.addEventListener('contextmenu', onZoneTitleContextMenu);
         },
+        showZoneMenu,
         refreshForZone,
     };
 })();

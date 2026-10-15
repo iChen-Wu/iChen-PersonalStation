@@ -134,18 +134,19 @@ class AutomationMixin:
         return {"ok": False, "error": f"不支持的动作类型: {atype}"}
 
     # ==================== cron 调度器 ====================
-    _scheduler_started = False
-    _scheduler_lock = threading.Lock()
-    _last_fire: Dict[str, tuple] = {}  # rule_id -> (y,m,d,h,mi)
+    # 状态放实例（惰性初始化）：类变量会在 Api 多实例/重载时串状态
 
     def _ensure_scheduler(self) -> None:
         """按需启动 cron 调度线程（仅一次）。"""
-        if AutomationMixin._scheduler_started:
+        if getattr(self, '_scheduler_started', False):
             return
-        with AutomationMixin._scheduler_lock:
-            if AutomationMixin._scheduler_started:
+        if not hasattr(self, '_scheduler_lock'):
+            self._scheduler_lock = threading.Lock()
+            self._last_fire: Dict[str, tuple] = {}  # rule_id -> (y,m,d,h,mi)
+        with self._scheduler_lock:
+            if getattr(self, '_scheduler_started', False):
                 return
-            AutomationMixin._scheduler_started = True
+            self._scheduler_started = True
             t = threading.Thread(target=self._scheduler_loop, daemon=True, name="ichen-automation")
             t.start()
 
@@ -171,11 +172,11 @@ class AutomationMixin:
             if not expr:
                 continue
             rid = r.get("id")
-            if AutomationMixin._last_fire.get(rid) == cur:
+            if self._last_fire.get(rid) == cur:
                 continue  # 本分钟已触发过
             if not _cron_match(expr, now):
                 continue
-            AutomationMixin._last_fire[rid] = cur
+            self._last_fire[rid] = cur
             try:
                 res = self._execute_action(r.get("action") or {})
                 print(f"[iChen] automation cron fired: {r.get('name')} -> {res}")

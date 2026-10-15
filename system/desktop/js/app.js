@@ -17,18 +17,6 @@
         if (iChen.Settings) iChen.Settings.init();
         if (iChen.Titlebar) iChen.Titlebar.init();
 
-        // App 自启动（manifest 声明 autostart: true）：中枢进程内后台逻辑随启动挂载。
-        iChen.PyAPI.listAutostartApps().then((r) => {
-            const apps = (r && r.apps) || [];
-            apps.forEach((node) => {
-                try {
-                    if (iChen.AppFrame) iChen.AppFrame.open(node);
-                } catch (e) { /* 单个失败不影响其它 */ }
-            });
-            if (apps.length && iChen.Notify) {
-                iChen.Notify.info('已自动挂载 ' + apps.length + ' 个自启动 App');
-            }
-        }).catch(() => { /* 忽略 */ });
         // 分区 Tab 与首个主体由 Shell 在 DOMContentLoaded 中自举激活
     }
 

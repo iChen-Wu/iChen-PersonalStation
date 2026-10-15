@@ -40,23 +40,23 @@
     <!-- ==================== 主壳（App 桌面；启动即进入，无待机层） ==================== -->
     <div class="shell" id="shell">
 
-        <!-- 顶部状态栏（玻璃；v0.9 定稿：不放东西、不承担导航，仅作为视觉锚）
-             左侧按钮组（位于 Tab 栏正上方）：列表开关 -->
-        <header class="topbar" id="topbar">
-            <button class="iconbtn" id="btn-pane-toggle" title="显示/隐藏列表" aria-expanded="true">
-                <svg viewBox="0 0 24 24" width="22" height="22" style="display:block;">
-                    <rect x="2" y="4" width="20" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
-                    <line x1="8" y1="8" x2="8" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></line>
-                </svg>
-            </button>
-        </header>
+        <!-- 顶部状态栏（玻璃；v0.9 定稿：不放东西、不承担导航，仅作为视觉锚。
+             v3.1.1 起后台入口移入 Tab 栏，此栏留空备用） -->
+        <header class="topbar" id="topbar"></header>
 
         <div class="shell-row" id="shell-row">
 
-            <!-- 左侧竖长条 Tab 栏（玻璃）：动态主体（apps 一级分区）+ 固定控制台 -->
+            <!-- 左侧竖长条 Tab 栏（玻璃）：动态主体（apps 一级分区）+ 固定 后台 / 控制台 -->
             <nav class="tabbar" id="tabbar">
                 <div id="zone-tabs"></div>
                 <div class="spacer"></div>
+                <button class="tab" data-zone="background" id="btn-pane-toggle" title="后台">
+                    <svg viewBox="0 0 24 24" width="22" height="22" style="display:block;">
+                        <rect x="3" y="7" width="14" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+                        <path d="M7.5 4.5 h10 a3 3 0 0 1 3 3 v9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                    </svg>
+                    <span>后台</span>
+                </button>
                 <button class="tab" data-zone="console" id="tab-console" title="控制台">
                     <svg viewBox="0 0 24 24" width="22" height="22">
                         <rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
@@ -272,7 +272,7 @@
                         <div class="settings-section">
                             <div class="settings-section-title">数据与安全红线</div>
                             <ul class="welcome-list">
-                                <li>自身数据写 App 目录内的 <code>data/</code>，或用户经文件通道选定的位置；不写系统目录、不访问其他 App。</li>
+                                <li>自身数据写中枢 <code>data/appdata/&lt;app_id&gt;/</code>（core 里读注入的 <code>APP_DATA_DIR</code>），或用户经文件通道选定的位置；不写系统目录、不访问其他 App。</li>
                                 <li><code>entry</code> / <code>ui</code> / <code>icon</code> 只能是 App 目录内的相对路径，绝对路径与 <code>..</code> 一律拒绝。</li>
                                 <li>图标只用 SVG 文件，不用 emoji 当图标；界面不依赖外网资源。</li>
                                 <li>不在独立模式或未连接服务时伪造结果，要给明确提示。</li>
@@ -303,6 +303,10 @@
                     <div class="settings-wrap">
                         <div class="panel-head">
                             <h2>后台</h2>
+                            <div class="panel-actions">
+                                <button class="btn" id="btn-programs-select-all">全选</button>
+                                <button class="btn btn-danger" id="btn-programs-kill-selected" disabled>终止选中</button>
+                            </div>
                         </div>
                         <div class="program-cards" id="program-cards"></div>
                         <div class="app-manage-empty" id="programs-empty">

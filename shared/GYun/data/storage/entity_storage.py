@@ -22,6 +22,9 @@ class EntityStorage:
             'priority': 0,
         }
         defaults.update(data)
+        # 内部字段不允许由外部数据覆盖（id/创建时间由系统生成）
+        defaults['entity_id'] = entity_id
+        defaults['create_time'] = now
         # V3.0 应用标识写入统一校验（覆盖 client/batch/memory 全部写入路径）
         if 'source' in defaults and defaults['source'] is not None:
             from GYun.data.storage.resource_storage import validate_source

@@ -10,6 +10,7 @@ class EntityService:
 
     def create(self, data: dict) -> str:
         data = self.hooks.run_before('create', data)
+        data = dict(data)  # 浅拷贝：pop 不污染调用者的原始 dict
         tags = data.pop('tags', [])
         resource_file = data.pop('resource_file', None)
         entity_id = EntityStorage.create(data)
@@ -29,6 +30,7 @@ class EntityService:
 
     def update(self, entity_id: str, update_data: dict):
         update_data = self.hooks.run_before('update', update_data)
+        update_data = dict(update_data)  # 浅拷贝：pop 不污染调用者的原始 dict
         tags = update_data.pop('tags', None)
         resource_file = update_data.pop('resource_file', None)
         EntityStorage.update(entity_id, update_data)

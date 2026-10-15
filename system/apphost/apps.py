@@ -21,6 +21,11 @@ try:
 except Exception:  # GYun 未安装时退回相对定位（项目根 = shell 的上级）
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+try:
+    from common.paths import APPDATA_DIR
+except Exception:  # shared 未上 sys.path 时退回相对构造（与 common.paths 同位置）
+    APPDATA_DIR = PROJECT_ROOT / "data" / "appdata"
+
 APPS_ROOT = PROJECT_ROOT / "apps"
 
 _SKIP_DIRS = {"__pycache__"}
@@ -28,7 +33,9 @@ _SKIP_DIRS = {"__pycache__"}
 # pick_files 的过滤预设：App 只能按预设名申请，避免任意 file_types 串
 _PICK_FILETYPES = {
     "image": ("图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp)", "所有文件 (*.*)"),
+    "svg": ("SVG 图标 (*.svg)", "所有文件 (*.*)"),
     "json": ("JSON (*.json)", "所有文件 (*.*)"),
+    "miniapp": ("iChen App 包 (*.miniapp)", "所有文件 (*.*)"),
     "all": ("所有文件 (*.*)",),
 }
 
@@ -135,7 +142,6 @@ def _scan_dir(base: Path, top: Path) -> List[Dict[str, Any]]:
                 "app_type": (info.get("type") or "").strip(),
                 "url": (info.get("url") or "").strip(),
                 "container": (info.get("container") or "").strip(),
-                "autostart": info.get("autostart") is True,
                 "path": rel,
                 "dir": _uri(d),
             }
@@ -315,6 +321,14 @@ def _load_app_module(app_id: str, core_path: Path):
     sys.modules.pop(name, None)
     sys.modules[name] = module
     spec.loader.exec_module(module)
+    # 注入 App 私有数据目录（data/appdata/<app_id>）：core 在 run()/函数内
+    # 可直接读全局 APP_DATA_DIR（模块顶层引用不可行——注入发生在模块执行之后）
+    try:
+        _appdata = APPDATA_DIR / app_id
+        _appdata.mkdir(parents=True, exist_ok=True)
+        module.APP_DATA_DIR = str(_appdata)
+    except OSError:
+        pass
     _MODULE_CACHE[app_id] = (core_path, mtime, module)
     return module
 
@@ -416,33 +430,6 @@ def run_core(app_dir: Path, entry: str, app_id: str, action: str, payload: Dict[
         return {"ok": False, "error": f"{app_id} 执行异常: {type(e).__name__}: {e}"}
 
 
-def list_autostart_apps(root: Path = APPS_ROOT) -> List[Dict[str, Any]]:
-    """列出声明了 `autostart` 的 App 节点（供中控启动时自动挂载）。
-
-    App 之间按 manifest 的 `order` 排，缺省按名称。
-    """
-    try:
-        tree = scan_apps_tree(root).get("tree", [])
-    except Exception:
-        return []
-
-    found: List[Dict[str, Any]] = []
-
-    def walk(nodes):
-        for n in nodes or []:
-            if n.get("type") == "app":
-                node_root = root / n.get("path", "")
-                info = _read_json(node_root / "manifest.json")
-                if info.get("autostart") is True:
-                    found.append(n)
-            if n.get("children"):
-                walk(n["children"])
-
-    walk(tree)
-    found.sort(key=_sort_key)
-    return found
-
-
 class AppsMixin:
     """apps/ 分区与目录树扫描 + App 运行时（组合进 Api，供 pywebview js_api 调用）"""
 
@@ -503,10 +490,6 @@ class AppsMixin:
         except Exception as e:
             return {"ok": False, "error": f"无法打开文件夹: {e}"}
 
-    def list_autostart_apps(self) -> Dict[str, Any]:
-        """启动时自动挂载的 App（manifest 声明 `autostart: true`）。"""
-        return {"ok": True, "apps": list_autostart_apps(APPS_ROOT)}
-
     def get_shared_css(self) -> str:
         """返回 shared/common/css 的 tokens + components 文本，供前端注入进 iframe。
 
@@ -554,7 +537,7 @@ class AppsMixin:
         经框架申请本方法（App 侧 postMessage `ichen:pick-file`，见 appframe.js）。
 
         mode:   open（打开文件）/ folder（选目录）/ save（保存文件）
-        filter: image / json / all（预设，见 _PICK_FILETYPES）
+        filter: image / svg / json / all（预设，见 _PICK_FILETYPES）
         返回 {"ok": True, "paths": [...]}；用户取消返回 {"ok": False, "canceled": True}
         """
         if not self._window:
@@ -592,6 +575,8 @@ class AppsMixin:
         except Exception as e:
             return {"ok": False, "canceled": True, "error": f"文件对话框失败: {e}"}
 
+        if isinstance(result, str):
+            result = [result]  # SAVE_DIALOG 在部分平台返回单个字符串，统一成列表
         paths = [str(p) for p in (result or []) if str(p).strip()]
         if not paths:
             return {"ok": False, "canceled": True}

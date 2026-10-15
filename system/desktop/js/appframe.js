@@ -30,6 +30,11 @@
         // 牵制在中枢内：sandbox 不给 allow-popups，站点里 target=_blank / window.open
         // 会被浏览器拦下，不会把窗口丢给系统默认浏览器；站内同窗口跳转仍在 iframe 内完成。
         if (node.app_type === 'url' && node.url) {
+            // 挂载前二次校验 scheme：只放行 http(s)，拒绝 javascript: 等危险协议
+            if (!/^https?:/i.test(node.url)) {
+                showUrlBlocked(inst, '仅支持 http(s) 地址，已拒绝挂载');
+                return;
+            }
             // manifest 指定 container=external：不尝试嵌入，直接外部浏览器打开
             if (node.container === 'external') {
                 iChen.PyAPI.openExternalUrl(node.url);
@@ -327,6 +332,16 @@
         else if (iChen.UI) iChen.UI.showToast('App 挂载失败：' + name);
     }
 
+    /** 重启实例：teardown 回收 → 销毁 iframe → 用原节点重新后台挂载（不切前台） */
+    async function restart(id) {
+        const inst = instances.get(id);
+        if (!inst) return false;
+        const node = inst.node;
+        await terminate(id);
+        openBackground(node);
+        return true;
+    }
+
     iChen.AppFrame = {
         init() { /* 无需 */ },
         open,
@@ -335,6 +350,7 @@
         showForZone,
         hideAll,
         terminate,
+        restart,
         notifyMountFailure,
         list: listInstances,
         count: () => instances.size,

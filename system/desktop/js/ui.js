@@ -35,6 +35,15 @@
             if (container) container.scrollTop = container.scrollHeight;
         },
 
+        /** 运行时长的人性化显示（后台列表 / 程序面板共用）；openedAt 为打开时间戳(ms) */
+        fmtDuration(openedAt) {
+            const s = Math.max(1, Math.floor((Date.now() - (openedAt || Date.now())) / 1000));
+            if (s < 60) return s + ' 秒';
+            if (s < 3600) return Math.floor(s / 60) + ' 分钟';
+            if (s < 86400) return Math.floor(s / 3600) + ' 小时 ' + Math.floor((s % 3600) / 60) + ' 分';
+            return Math.floor(s / 86400) + ' 天';
+        },
+
         /** 追加系统提示消息（居中胶囊） */
         showSystemMsg(container, text) {
             if (!container) return;
@@ -62,11 +71,14 @@
 
         /** 上下文菜单（支持嵌套子菜单）。
          *  items: [{label, action?, danger?, submenu?: [...]}]
+         *  sourceEl（可选）：触发右键的行元素——菜单存续期间给它挂 .ctx-anchor 保持高亮，
+         *  菜单关闭即移除；不影响鼠标悬停其他行的 hover 高亮。
          *  子菜单 hover 打开，鼠标移走（含子菜单区）延时关闭，来回滑动不会残留或叠加阴影。
          *  点击项 / 点外部 / Esc 关闭全部。 */
-        showContextMenu(items, x, y) {
+        showContextMenu(items, x, y, sourceEl) {
             const HOVER_DELAY = 150;
             const allMenus = [];
+            if (sourceEl && sourceEl.classList) sourceEl.classList.add('ctx-anchor');
 
             const buildMenu = (itemsList, anchorEl, parentMenu, onDestroy) => {
                 const menu = document.createElement('div');
@@ -175,6 +187,7 @@
                 document.removeEventListener('contextmenu', onDown);
                 window.removeEventListener('blur', onBlur);
                 document.removeEventListener('keydown', onKey);
+                if (sourceEl && sourceEl.classList) sourceEl.classList.remove('ctx-anchor');
                 root._destroy();
             };
 

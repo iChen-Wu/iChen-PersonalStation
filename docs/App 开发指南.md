@@ -42,6 +42,12 @@ apps/
 - `type`（可选）：`logic`（逻辑型）/ `ui`（纯界面）/ `url`（网址）/ `service`（后台服务型）。
 - `url`（type 为 url 时必填）：`http(s)://` 网址。
 - `container`（仅 url 型）：`iframe`（嵌在中枢内，默认）或 `external`（用系统浏览器打开）。
+- `requires`（可选）：App 的依赖声明，供「导出 / 导入 miniapp 包」使用，缺省视为无依赖。
+  - `shared`：写 shared/ 下的模块目录名（如 `["GYun"]`）；导出时整模块打包（数据库 *.db、
+    data/ 目录绝不进包），导入时若目标机已有同名模块则跳过不覆盖。
+  - `py`：写 import 用的模块名（如 `["requests", "bs4"]`）；纯 Python 库随包拷贝，带二进制的
+    库（pywebview、Pillow 等）无法跨机拷贝，导入时自动 `pip install --target data/pylibs`。
+    也可写 `pip:包名` 强制按 pip 包名处理（如 `["pip:beautifulsoup4"]`）。
 
 ```json
 {
@@ -56,6 +62,10 @@ apps/
   "type": "logic"
 }
 ```
+
+打包分享：在左侧列表右键 App → 「导出 miniapp」，得到 `.miniapp` 包（zip 格式，内含 App 全部
+文件 + 依赖的 shared 模块 + 纯 Python 库 + 打包清单）；对方在「新建 App → 导入 miniapp 包」
+选入即可，缺的依赖自动补齐，id 冲突时可选覆盖。
 
 ## 三、folder.json（分区 / 分类信息，可选）
 
@@ -272,7 +282,10 @@ function pickFile() {
 
 ## 八、数据存放
 
-- App 自身数据写自己目录下的 `data/`（需要时创建），或用户经文件通道选定的位置；不要写系统目录。
+- App 自身数据写中枢的 `data/appdata/<app_id>/`（推荐）或用户经文件通道选定的位置；不要写系统目录。
+  core.py 里直接用注入的全局 `APP_DATA_DIR`（字符串路径，加载时已创建好；在 `run()`/函数内读取，
+  不要在模块顶层引用），或 `from common.paths import app_data_dir` 调 `app_data_dir(你的id)`。
+  数据落这里而不是 App 目录内：导出 / 覆盖导入 miniapp 只动 App 目录，用户数据天然不受影响。
 - 共享业务数据走 `shared/` 提供的库（如 GYun 实体库），连接与路径由 `common.paths` 决定，
   不要自己拼数据库路径。
 - 不要假设能访问其他 App 的目录或中枢内部文件。

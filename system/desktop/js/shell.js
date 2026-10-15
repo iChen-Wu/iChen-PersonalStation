@@ -2,8 +2,8 @@
    shell.js - 主壳状态机（动态主体）
    - 主体（Tab）由 apps/ 一级目录动态生成（scan_zones；folder.json 提供
      名称/图标/顺序）——apps 里新增一级文件夹，刷新后 Tab 自动出现
-   - 底部固定"控制台"：其列表是控制台条目（设置为其一，可扩展日志/关于等）
-   - 列表开关固定在顶部状态栏左侧；无待机层（待机将来由程序承担）
+   - 底部固定「后台 / 控制台」：后台 = 运行中的实例列表；控制台列表是控制台条目（设置为其一）
+   - 顶部状态栏留空（仅视觉锚）；无待机层（待机将来由程序承担）
    ============================================================ */
 (function () {
     const iChen = window.iChen = window.iChen || {};
@@ -11,7 +11,8 @@
     const state = {
         zones: [],          // [{key,name,icon_data,order,...}]
         zone: null,         // 当前主体 key（分区路径 或 'console'）
-        item: null,         // 控制台当前条目 key
+        item: null,         // 当前条目 key（分区树选中项 / 控制台条目）
+        consoleItem: null,  // 上次所在的控制台条目（运行时记忆，切走再回来时恢复）
         collapsed: false,   // 列表区折叠
     };
 
@@ -147,14 +148,22 @@
             b.appendChild(img);
             b.appendChild(s);
             b.addEventListener('click', () => { clickZone(z.key); });
+            // 右键 Tab 图标 → 分区操作菜单（新建 App / 新建文件夹 / 删除分区）
+            b.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (iChen.Tree && iChen.Tree.showZoneMenu) iChen.Tree.showZoneMenu(z.key, z.name, e.clientX, e.clientY);
+            });
             box.appendChild(b);
         });
     }
 
-    /** 点击主体 Tab：先重扫分区元数据（Tab 栏自身的名称/图标也一起刷新），再激活 */
+    /** 点击主体 Tab：先重扫分区元数据（Tab 栏自身的名称/图标也一起刷新），再激活。
+     *  再点当前 Tab（列表展开中）→ 折叠列表；已折叠时点 → 展开。 */
     async function clickZone(key) {
         await loadZones();
         if ((state.zones || []).some((x) => x.key === key)) {
+            if (state.zone === key && !state.collapsed) { collapsePane(); return; }
             activate(key);
         } else {
             await reload(); // 分区刚被改名/删除 → 走回退逻辑
@@ -202,9 +211,11 @@
 
         renderConsoleList();
 
-        // 默认选中第一个条目（后台）
-        const first = CONSOLE_ITEMS.length ? CONSOLE_ITEMS[0].key : null;
-        selectConsoleItem(first);
+        // 恢复上次所在的控制台条目（运行时记忆）；没有则默认第一个
+        const remembered = state.consoleItem && CONSOLE_ITEMS.some((x) => x.key === state.consoleItem)
+            ? state.consoleItem
+            : (CONSOLE_ITEMS.length ? CONSOLE_ITEMS[0].key : null);
+        selectConsoleItem(remembered);
         syncPaneToggle();
     }
 
@@ -253,6 +264,7 @@
         if (!item) return;
 
         state.item = key;
+        state.consoleItem = key; // 运行时记忆：控制台切走再回来时恢复到此条目
         document.querySelectorAll('#app-tree .console-item').forEach((r) => {
             r.classList.toggle('active', r.dataset.key === key);
         });
@@ -288,10 +300,93 @@
         }));
     }
 
+    /* ================= 后台（Tab 栏固定入口：运行中的程序） ================= */
+    /** 进入后台视图：左侧列表显示运行中的程序实例（点击切前台，右键 重启/终止） */
+    function activateBackground() {
+        state.zone = 'background';
+        state.item = null;
+        state.collapsed = false;
+        setTabActive('background');
+        syncPaneClass();
+        $('listpane-title').textContent = '后台';
+        syncPaneToggle();
+        hidePanels();
+        if (iChen.AppFrame) iChen.AppFrame.hideAll(); // 舞台让位给后台列表
+        renderBackgroundList();
+    }
+
+    function renderBackgroundList() {
+        const root = $('app-tree');
+        root.innerHTML = '';
+        $('tree-empty').hidden = true;
+        const list = (iChen.AppFrame && iChen.AppFrame.list) ? iChen.AppFrame.list() : [];
+        if (!list.length) {
+            const empty = document.createElement('div');
+            empty.className = 'tree-empty-note';
+            empty.textContent = '没有在后台运行的程序。打开过的 App 会常驻这里，可随时切回。';
+            root.appendChild(empty);
+            return;
+        }
+        list.forEach((p) => {
+            const row = document.createElement('div');
+            row.className = 'trow trow-app console-item';
+
+            const arrow = document.createElement('span');
+            arrow.className = 'spacer-arrow';
+            const img = document.createElement('img');
+            img.className = 'trow-icon';
+            img.src = p.icon || DEFAULT_TAB_ICON;
+            img.alt = '';
+            const name = document.createElement('span');
+            name.className = 'trow-name';
+            name.textContent = p.name;
+            const desc = document.createElement('span');
+            desc.className = 'ami-desc';
+            desc.textContent = p.active ? '前台' : '后台';
+
+            row.appendChild(arrow);
+            row.appendChild(img);
+            row.appendChild(name);
+            row.appendChild(desc);
+            row.addEventListener('click', () => bringToFront(p));
+            row.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                iChen.UI.showContextMenu([
+                    { label: '切到前台', action: () => bringToFront(p) },
+                    { label: '重启', action: () => restartInstance(p) },
+                    { label: '终止', danger: true, action: () => killInstance(p) },
+                ], e.clientX, e.clientY, row);
+            });
+            root.appendChild(row);
+        });
+    }
+
+    function bringToFront(p) {
+        if (p.zone) activate(p.zone); else activateConsole();
+        if (iChen.AppFrame) iChen.AppFrame.show(p.id); // activate 显示的是该区最近实例，这里强制显示点中的
+    }
+
+    async function killInstance(p) {
+        if (!await iChen.Dialog.confirm('终止「' + p.name + '」？该程序将结束运行，未保存的数据会丢失。', '确认终止')) return;
+        if (iChen.AppFrame) await iChen.AppFrame.terminate(p.id);
+        if (iChen.UI) iChen.UI.showToast('已终止：' + p.name);
+        renderBackgroundList();
+    }
+
+    async function restartInstance(p) {
+        if (iChen.AppFrame && iChen.AppFrame.restart) await iChen.AppFrame.restart(p.id);
+        if (iChen.UI) iChen.UI.showToast('已重启：' + p.name);
+        renderBackgroundList();
+    }
+
+    /** 运行时长显示统一在 iChen.UI.fmtDuration（后台列表 / 程序面板共用） */
+
     /** 手动刷新：重扫 zones（新增/删除一级文件夹 → Tab 变化）并刷新当前视图 */
     async function reload() {
         await loadZones();
         if (state.zone === 'console') { renderConsoleList(); return; }
+        if (state.zone === 'background') { renderBackgroundList(); return; }
         const current = state.zone && state.zone !== 'console';
         if (current && !(state.zones || []).some((z) => z.key === state.zone)) {
             state.zone = null; // 当前分区已被删除/不存在 → 回退
@@ -300,24 +395,23 @@
         activate(state.zone || fallback);
     }
 
-    /* ================= 列表开关（固定顶部状态栏左侧） ================= */
+    /* ================= 列表开关与后台按钮（固定顶部状态栏左侧） ================= */
     function syncPaneClass() {
         $('shell-row').classList.toggle('collapsed', state.collapsed);
     }
 
+    /** 高亮后台 Tab：处于后台视图时点亮（折叠列表不熄灭，与其他 Tab 行为一致） */
     function syncPaneToggle() {
-        const on = !state.collapsed;
         const btn = $('btn-pane-toggle');
         if (!btn) return;
-        btn.classList.toggle('active', on);
-        btn.setAttribute('aria-expanded', String(on));
+        btn.classList.toggle('active', state.zone === 'background');
     }
 
-    function togglePane() {
-        state.collapsed = !state.collapsed;
-        syncPaneClass(); // CSS 过渡：滑出/滑入
+    /** 折叠左侧列表（折叠职能已移交给 Tab 图标：再点当前 Tab 即折叠） */
+    function collapsePane() {
+        state.collapsed = true;
+        syncPaneClass();
         syncPaneToggle();
-        $('btn-pane-toggle').title = state.collapsed ? '显示列表' : '隐藏列表';
     }
 
     /* ================= 暴露 ================= */
@@ -326,18 +420,31 @@
         getZones: () => state.zones,
         activate,
         activateConsole,
+        activateBackground,
         selectConsoleItem,
         reload,
-        togglePane,
     };
 
     /* ================= 事件绑定 ================= */
     document.addEventListener('DOMContentLoaded', () => {
-        $('btn-pane-toggle').addEventListener('click', togglePane);
-        $('tab-console').addEventListener('click', () => activateConsole());
+        // 左上按钮 = 后台入口：点击出现运行中程序的列表（右键 重启/终止）
+        $('btn-pane-toggle').addEventListener('click', () => {
+            if (state.zone === 'background' && !state.collapsed) collapsePane();
+            else activateBackground();
+        });
+        // 再点控制台 Tab：列表展开中 → 折叠
+        $('tab-console').addEventListener('click', () => {
+            if (state.zone === 'console' && !state.collapsed) collapsePane();
+            else activateConsole();
+        });
 
         // 接入页：规格预览填充 + 一键复制绑定
         initWelcomeDoc();
+
+        // 实例增减时同步后台列表
+        document.addEventListener('ichen:instances-changed', () => {
+            if (state.zone === 'background') renderBackgroundList();
+        });
 
         // 启动即自动扫描 apps/（重扫分区 → 激活首个分区 → 加载其目录树），
         // 新增 / 删除文件夹后重开中枢即可见，无需手动刷新。

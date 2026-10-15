@@ -239,7 +239,7 @@
     }
 
     /* ---------- 玻璃下拉选择（替代浏览器原生 select，风格与右键菜单一致） ---------- */
-    function makeSelect(options, value) {
+    function makeSelect(options, value, onChange) {
         const wrap = document.createElement('div');
         wrap.className = 'gsel';
         const btn = document.createElement('button');
@@ -289,6 +289,7 @@
                     val = o.value;
                     sync();
                     closeMenu();
+                    if (typeof onChange === 'function') onChange(val); // 菜单挂在 body，点击不冒泡到表单，必须显式回调
                 });
                 menu.appendChild(it);
             });
@@ -365,7 +366,10 @@
             { value: 'app_open', label: '打开 App' },
             { value: 'cron', label: 'cron 定时' },
             { value: 'startup', label: '中枢启动时' },
-        ], r.trigger.type || 'app_open');
+        ], r.trigger.type || 'app_open', (v) => {
+            fTrigAppEl.style.display = (v === 'app_open') ? '' : 'none';
+            fCronEl.style.display = (v === 'cron') ? '' : 'none';
+        });
         const fTrigEl = field('触发器');
         fTrigEl.appendChild(fTrig.el);
         box.appendChild(fTrigEl);
@@ -397,13 +401,12 @@
         fActAppEl.appendChild(fActApp.el);
         box.appendChild(fActAppEl);
 
-        function sync() {
+        // 初始显隐同步（后续切换由触发器下拉的 onChange 回调驱动）
+        {
             const tt = fTrig.value;
             fTrigAppEl.style.display = (tt === 'app_open') ? '' : 'none';
             fCronEl.style.display = (tt === 'cron') ? '' : 'none';
         }
-        fTrig.el.addEventListener('click', () => setTimeout(sync, 0)); // 选择后同步显隐
-        sync();
 
         const actions = document.createElement('div');
         actions.className = 'dlg-actions';

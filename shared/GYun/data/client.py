@@ -59,14 +59,15 @@ class GyunClient:
         self._source = validate_source(source)
 
     def _inject_source(self, payload: dict) -> dict:
-        """应用模式下自动注入 source 过滤；全局模式原样返回。"""
+        """应用模式下自动注入 source 过滤；全局模式原样返回。浅拷贝注入，不改调用者的 dict。"""
         if self._source is not None and 'source' not in payload:
+            payload = dict(payload)
             payload['source'] = self._source
         return payload
 
     # ---- 实体管理 ----
     def create_entity(self, data: dict) -> str:
-        self._inject_source(data)
+        data = self._inject_source(data)
         return self._entity_service.create(data)
 
     def get_entity(self, entity_id: str) -> dict:
@@ -136,8 +137,7 @@ class GyunClient:
 
     # ---- 批量 ----
     def batch_create_entities(self, data_list: List[dict], on_error: str = "rollback") -> List[str]:
-        for item in data_list:
-            self._inject_source(item)
+        data_list = [self._inject_source(item) for item in data_list]  # 注入 source（每项浅拷贝）
         return self._batch_service.batch_create(data_list, on_error)
 
     def batch_update_entities(self, filters: dict, update_data: dict) -> int:

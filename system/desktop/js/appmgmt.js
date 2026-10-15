@@ -2,7 +2,7 @@
    appmgmt.js - 控制台 → App 管理
    - 扫描 apps/ 整树：分区 / 分类文件夹 / App 分组列出
    - 文件夹：改名（目录名）、描述、图标
-   - App：改名、图标、自启动、移动、打开目录、卸载
+   - App：改名、图标、移动、打开目录、卸载
    - 新建：粘贴 HTML / URL / 导入文件夹 / 新建分类
    ============================================================ */
 (function () {
@@ -32,7 +32,7 @@
     }
 
     async function pickIcon() {
-        const picked = await iChen.PyAPI.pickFiles('open', false, 'image', '');
+        const picked = await iChen.PyAPI.pickFiles('open', false, 'svg', '');
         if (!picked || !picked.ok || !(picked.paths || []).length) return null;
         return picked.paths[0];
     }
@@ -156,6 +156,7 @@
                     label: '新建 App',
                     submenu: [
                         { label: '导入文件夹', action: () => newApp('import', node.path) },
+                        { label: '导入 miniapp 包', action: () => newApp('importMiniapp', node.path) },
                         { label: '导入 HTML 文件', action: () => newApp('importHtml', node.path) },
                         { label: '输入 HTML', action: () => newApp('html', node.path) },
                         { label: '输入 URL', action: () => newApp('url', node.path) },
@@ -166,7 +167,7 @@
                 { label: '修改描述', action: editDesc },
                 { label: '修改图标', action: setIcon },
                 { label: '删除文件夹', danger: true, action: () => deleteFolder(node, isZone) },
-            ], e.clientX, e.clientY);
+            ], e.clientX, e.clientY, item);
         });
         return item;
     }
@@ -188,18 +189,22 @@
                 toast(r && r.ok, '已更新图标', '图标更新失败', r);
                 if (r && r.ok) afterChange();
             },
-            toggleAutostart: async () => {
-                const next = !app.autostart;
-                const r = await iChen.PyAPI.setAppMeta(app.id, { autostart: next });
-                toast(r && r.ok, (next ? '已设为自启动' : '已取消自启动'), '设置失败', r);
-                if (r && r.ok) afterChange();
-            },
             move: async () => {
                 const target = await pickFolder({ title: '移动到…' });
                 if (target == null) return;
                 const r = await iChen.PyAPI.moveApp(app.id, target);
                 toast(r && r.ok, '已移动', '移动失败', r);
                 if (r && r.ok) afterChange();
+            },
+            exportMiniapp: async () => {
+                const picked = await iChen.PyAPI.pickFiles('save', false, 'miniapp', (app.name || app.id) + '.miniapp');
+                if (!picked || !picked.ok || !(picked.paths || []).length) return;
+                const r = await iChen.PyAPI.exportMiniapp(app.id, picked.paths[0]);
+                let extra = '';
+                if (r && r.ok && (r.pip_required || []).length) {
+                    extra = '（需在线安装：' + r.pip_required.join('、') + '）';
+                }
+                toast(r && r.ok, '已导出' + extra, '导出失败', r);
             },
             openFolder: async () => {
                 const r = await iChen.PyAPI.openAppFolder(app.id);
@@ -236,8 +241,7 @@
 
         const a = makeAppActions(app, afterChange);
         addBtn(item, '改名', '改显示名（并尽量连文件夹一起改）', a.rename);
-        addBtn(item, '图标', '选择一张图片（svg/png/jpg）作为 App 图标', a.setIcon);
-        addBtn(item, app.autostart ? '自启动 ✓' : '自启动', '启动中枢时是否自动打开这个 App', a.toggleAutostart);
+        addBtn(item, '图标', '选择一个 SVG 文件作为 App 图标', a.setIcon);
         addBtn(item, '移动', '移到 apps/ 下的另一个分区或分类', a.move);
         addBtn(item, '打开目录', '在资源管理器中打开', a.openFolder);
         addBtn(item, '卸载', '删除该 App 的目录', a.uninstall, true);
@@ -250,10 +254,10 @@
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
-                { label: '自启动', action: a.toggleAutostart },
+                { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '打开目录', action: a.openFolder },
                 { label: '卸载', danger: true, action: a.uninstall },
-            ], e.clientX, e.clientY);
+            ], e.clientX, e.clientY, item);
         });
         return item;
     }
@@ -421,8 +425,8 @@
         });
     }
 
-    /** 新建 App 的 4 种类型：import=导入文件夹 / importHtml=导入 HTML 文件 / html=输入 HTML / url=输入 URL。
-     *  defaultParent：若指定（如从文件夹右键新建），直接用该路径，不再弹选择器。 */
+    /** 新建 App 的 5 种类型：import=导入文件夹 / importMiniapp=导入 miniapp 包 / importHtml=导入 HTML 文件
+     *  / html=输入 HTML / url=输入 URL。defaultParent：若指定（如从文件夹右键新建），直接用该路径。 */
     async function newApp(type, defaultParent) {
         const parent = defaultParent != null ? defaultParent : await pickFolder({ title: '新建到…' });
         if (parent == null) return;
@@ -435,6 +439,41 @@
             const r = await iChen.PyAPI.importAppFolder(parent, picked.paths[0], '');
             toast(r && r.ok, '已导入', '导入失败', r);
             if (r && r.ok) afterChange();
+            return;
+        }
+        if (type === 'importMiniapp') {
+            const picked = await iChen.PyAPI.pickFiles('open', false, 'miniapp', '');
+            if (!picked || !picked.ok || !(picked.paths || []).length) {
+                if (iChen.UI) iChen.UI.showToast((picked && picked.error) || '未选择 miniapp 包');
+                return;
+            }
+            const showResult = (r, isUpdate) => {
+                if (!r || !r.ok) { toast(false, '', isUpdate ? '更新失败' : '导入失败', r); return; }
+                let extra = '';
+                if ((r.shared_skipped || []).length) extra += '；本地已有 shared 跳过：' + r.shared_skipped.join('、');
+                if ((r.pip_failed || []).length) extra += '；pip 安装失败：' + r.pip_failed.join('、');
+                toast(true, (isUpdate ? '已更新' : '已导入') + extra, '', r);
+                afterChange();
+            };
+            const first = await iChen.PyAPI.importMiniapp(picked.paths[0], parent, '');
+            if (first && first.conflict === 'app_exists') {
+                // 同 id 不报错，引导「更新」：展示双方版本号，确认后覆盖
+                const lv = first.local_version || '未知';
+                const pv = first.pkg_version || '未知';
+                if (!await iChen.Dialog.confirm(
+                    '已存在同 id 的 App「' + first.app_id + '」（本地 ' + lv + ' → 包内 ' + pv + '）。\n'
+                    + '用包内版本更新它？原 App 目录会被删除（中枢 data/appdata 里的数据不受影响）。',
+                    '更新 App')) return;
+                const r = await iChen.PyAPI.importMiniapp(picked.paths[0], parent, 'overwrite');
+                // 覆盖后旧实例仍指向已删目录：若在运行，先终止（用户再打开即为新版）
+                if (r && r.ok && iChen.AppFrame && iChen.AppFrame.list
+                    && iChen.AppFrame.list().some((x) => x.id === first.app_id)) {
+                    await iChen.AppFrame.terminate(first.app_id);
+                }
+                showResult(r, true);
+            } else {
+                showResult(first, false);
+            }
             return;
         }
         const name = await iChen.Dialog.prompt('App 名称（同时作为目录名）', '新建 App', '');
@@ -490,6 +529,7 @@
                 label: '新建 App',
                 submenu: [
                     { label: '导入文件夹', action: () => newApp('import') },
+                    { label: '导入 miniapp 包', action: () => newApp('importMiniapp') },
                     { label: '导入 HTML 文件', action: () => newApp('importHtml') },
                     { label: '输入 HTML', action: () => newApp('html') },
                     { label: '输入 URL', action: () => newApp('url') },

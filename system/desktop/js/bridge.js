@@ -83,12 +83,6 @@
             return ''; // 无桥不注入（App 有内联兜底）
         },
 
-        async listAutostartApps() {
-            const api = getRealApi();
-            if (api) return api.list_autostart_apps();
-            return { ok: true, apps: [] };
-        },
-
         async getAppUi(appId) {
             const api = getRealApi();
             if (api) return api.get_app_ui(appId);
@@ -105,6 +99,18 @@
         },
 
         /* ---------- App 编辑（控制台 → 设置 → App 管理） ---------- */
+        async exportMiniapp(appId, target) {
+            const api = getRealApi();
+            if (api && api.export_miniapp) return api.export_miniapp(appId, target);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        async importMiniapp(zipPath, parentDir, conflict) {
+            const api = getRealApi();
+            if (api && api.import_miniapp) return api.import_miniapp(zipPath, parentDir || '', conflict || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         async listEditableApps() {
             const api = getRealApi();
             if (api) return api.list_app_editable();

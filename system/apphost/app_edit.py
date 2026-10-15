@@ -10,6 +10,7 @@
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -113,7 +114,7 @@ class AppEditMixin:
         d = _node_dir(app_id)
         if d is None or not (d / "manifest.json").is_file():
             return {"ok": False, "error": f"未找到 App: {app_id}"}
-        allowed = {"description", "icon", "order", "type", "channel", "url", "container", "autostart"}
+        allowed = {"description", "icon", "order", "type", "channel", "url", "container"}
         patch = {k: v for k, v in (meta or {}).items() if k in allowed}
         if not patch:
             return {"ok": False, "error": "没有可改的字段"}
@@ -122,8 +123,6 @@ class AppEditMixin:
                 patch["order"] = float(patch["order"])
             except (TypeError, ValueError):
                 return {"ok": False, "error": "order 必须是数字"}
-        if "autostart" in patch:
-            patch["autostart"] = bool(patch["autostart"])
         cur = _read_json(d / "manifest.json")
         cur.update(patch)
         try:
@@ -140,8 +139,8 @@ class AppEditMixin:
         src = Path(src_file or "")
         if not src.is_file():
             return {"ok": False, "error": f"图标文件不存在: {src_file}"}
-        if src.suffix.lower() not in {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
-            return {"ok": False, "error": "图标只支持 svg/png/jpg/jpeg/webp/gif/bmp"}
+        if src.suffix.lower() != ".svg":
+            return {"ok": False, "error": "图标只支持 SVG 文件"}
         icon_name = "icon" + src.suffix.lower()
         try:
             shutil.copyfile(src, d / icon_name)
@@ -278,8 +277,8 @@ class AppEditMixin:
         src = Path(src_file or "")
         if not src.is_file():
             return {"ok": False, "error": f"图标文件不存在: {src_file}"}
-        if src.suffix.lower() not in {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
-            return {"ok": False, "error": "图标只支持 svg/png/jpg/jpeg/webp/gif/bmp"}
+        if src.suffix.lower() != ".svg":
+            return {"ok": False, "error": "图标只支持 SVG 文件"}
         icon_name = "icon" + src.suffix.lower()
         try:
             shutil.copyfile(src, d / icon_name)
@@ -452,7 +451,9 @@ class AppEditMixin:
             shutil.copytree(src, target)
             meta = _read_json(target / "manifest.json")
             meta["name"] = new_name.strip()
-            meta["id"] = f"{meta.get('id', 'app')}.copy"
+            # id 追加时间戳后缀：连续复制不会撞 id（仅 .copy 会）
+            base_id = str(meta.get("id") or "app")
+            meta["id"] = base_id + ".copy" + str(int(time.time()))
             _write_json(target / "manifest.json", meta)
         except OSError as e:
             return {"ok": False, "error": f"复制失败: {e}"}
