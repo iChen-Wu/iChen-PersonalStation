@@ -1,6 +1,6 @@
 """依赖方向守卫（V3.0.0 · P2）。
 
-规则（见 docs/plan/V3.0.0 Plan.md 第二节「导入契约」）：
+规则（见 docs/1-开发流程.md「开发习惯」导入约定）：
 
     system/ → shared/ ← apps/ services/
     system/ → data/   ← apps/ services/

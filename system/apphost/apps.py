@@ -410,7 +410,7 @@ def run_core(app_dir: Path, entry: str, app_id: str, action: str, payload: Dict[
         return {"ok": False, "error": f"{entry} 缺少 run(params) 入口"}
 
     # 注入 App 互调能力：core.py 里可写 `ichen_call("other.app", "action", {...})`
-    # 按 id 运行时解析，不写死模块路径（见 docs/App 侧契约.md）。
+    # 按 id 运行时解析，不写死模块路径。
     def _ichen_call(target_id: str, act: str = "run", pay: Dict[str, Any] = None):
         return call_app(target_id, act, pay, root=APPS_ROOT, _depth=_depth + 1)
 

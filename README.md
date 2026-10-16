@@ -97,7 +97,7 @@ def run(params: dict) -> dict:
 window.parent.postMessage({ app: "me.first", action: "hello", payload: {} }, "*");
 ```
 
-重开中枢，分区树里就会出现它。完整规格见 [App 开发指南](docs/App%20开发指南.md)。
+重开中枢，分区树里就会出现它。完整规格见 [3-App开发指南](docs/3-App开发指南.md)。
 
 ## 快速开始
 
@@ -114,7 +114,7 @@ python -m system.main   # 启动中枢（App 桌面，托盘常驻）
 |---|---|---|
 | 开发版 | 本仓库 | 中枢开发地；apps 只留测试夹具 |
 | 正式版 | `D:/iChen` | 日常使用：业务 App、业务库、业务数据；快捷方式启动 |
-| 移动版 | `F:/iChen` | U 盘随身：自带嵌入式 Python，干净环境 |
+| 移动版 | `H:/iChen`（U 盘） | U 盘随身：自带嵌入式 Python，干净环境 |
 
 更新正式版走增量工具（先比对后写入，永不触碰 apps / shared / data / runtime）：
 
@@ -127,11 +127,10 @@ python ../workbench/tools/update_production.py --apply    # 确认后写入
 
 | 文档 | 内容 |
 |---|---|
-| [docs/README.md](docs/README.md) | 文档索引 |
-| [docs/iChen 项目说明.md](docs/iChen%20项目说明.md) | 定位、目录结构、开发约定 |
-| [docs/App 开发指南.md](docs/App%20开发指南.md) | 做 App 的权威规格（manifest / ui / core / 桥协议） |
-| [docs/正式版更新指南.md](docs/正式版更新指南.md) | 更新流程与保护清单 |
-| [docs/数据与备份说明.md](docs/数据与备份说明.md) | 业务库位置、备份操作与数据红线 |
+| [docs/README.md](docs/README.md) | 文档索引（三部分） |
+| [docs/1-开发流程.md](docs/1-开发流程.md) | 版本规则、开发习惯、发布同步、备份恢复 |
+| [docs/2-项目说明.md](docs/2-项目说明.md) | 定位、三版本边界、目录结构、机制、数据红线 |
+| [docs/3-App开发指南.md](docs/3-App开发指南.md) | 做 App 的权威规格（manifest / ui / core / 桥协议） |
 | [docs/开发记录.md](docs/开发记录.md) | v3.0.0 起的变更台账 |
 
 ## 给 AI 的一句话
