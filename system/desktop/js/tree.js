@@ -61,6 +61,7 @@
         const row = document.createElement('div');
         row.className = 'trow trow-app';
         row.dataset.kind = 'app';
+        row.dataset.appId = node.id || '';
         row._node = node; // 供点击时把完整节点交给 AppFrame
         const spacer = document.createElement('span');
         spacer.className = 'spacer-arrow';
@@ -107,7 +108,7 @@
         return n;
     }
 
-    function renderTree(tree) {
+    function renderTree(tree, animate) {
         currentTree = tree || [];
         const root = $('app-tree');
         root.innerHTML = '';
@@ -118,12 +119,13 @@
             + '暂无 App。<br>往 apps/' + (currentZone ? currentZone + '/' : '')
             + ' 放一个含 manifest.json 的文件夹即会出现；此列表只镜像目录，无预置内容。';
         renderList(root, tree || []);
-        // 新列表替换旧列表时统一淡入；因不再先清空成"扫描中"占位，所以不会闪烁
-        if (iChen.UI) iChen.UI.animateIn(root);
+        // 淡入只在「真正切换分区」时播放；折叠后再展开（同分区）不重放，避免观感干扰
+        if (animate !== false && iChen.UI) iChen.UI.animateIn(root);
+        syncActiveHighlight(); // 重渲染后按当前前台实例恢复高亮
     }
 
     /* ---------- 按分区刷新 ---------- */
-    async function refreshForZone(zoneKey, zoneName) {
+    async function refreshForZone(zoneKey, zoneName, animate) {
         currentZone = zoneKey;
         currentZoneName = zoneName || zoneKey || '';
         const container = $('app-tree');
@@ -136,7 +138,7 @@
                 $('tree-empty').hidden = true;
                 return;
             }
-            renderTree(r.tree || []);
+            renderTree(r.tree || [], animate);
         } catch (e) {
             container.innerHTML = '<div class="tree-empty-note">扫描失败：' + e + '</div>';
         }
@@ -164,10 +166,22 @@
             return;
         }
         if (row.dataset.kind === 'app') {
-            document.querySelectorAll('#app-tree .trow-app').forEach((r) => r.classList.remove('active'));
-            row.classList.add('active');
+            // 单前台调度：没开就开到前台；已在前台再点即收起；在后台则调回前台
             if (iChen.AppFrame && row._node) iChen.AppFrame.open(row._node);
+            syncActiveHighlight();
         }
+    }
+
+    /** 按当前舞台窗口同步列表高亮（哪个 App 在舞台上，哪行就亮；可多个） */
+    function syncActiveHighlight() {
+        const root = $('app-tree');
+        if (!root) return;
+        root.querySelectorAll('.trow-app').forEach((r) => {
+            const id = r.dataset.appId;
+            const on = !!(id && iChen.AppFrame && iChen.AppFrame.isOnStage
+                && iChen.AppFrame.isOnStage(id));
+            r.classList.toggle('active', on);
+        });
     }
 
     /* ---------- 右键菜单 ---------- */
@@ -262,6 +276,9 @@
         init() {
             $('app-tree').addEventListener('click', onTreeClick);
             $('app-tree').addEventListener('contextmenu', onContextMenu);
+            // 前台窗口变化（含从后台调度器切换、卡片按钮收起）→ 同步列表高亮
+            document.addEventListener('ichen:instances-changed', syncActiveHighlight);
+            document.addEventListener('ichen:instance-shown', syncActiveHighlight);
         },
         showZoneMenu,
         refreshForZone,

@@ -80,6 +80,12 @@ def build_restart_argv(argv) -> list:
 
 def main():
     flags = parse_flags(sys.argv)
+    # 日志落盘（最早安装：之后的所有 print / 异常都进 data/logs/ichen.log）
+    try:
+        from system.kernel.logtee import install_log_tee
+        install_log_tee()
+    except Exception:
+        pass
     # 无边框窗口的唯一门禁：命令行 --frameless（单次强制）或设置页持久化开关
     frameless = bool(flags["frameless"]) or read_persisted_frameless()
     # 首次启动：把默认配置基线补到 data/config/（只补缺失项，不覆盖用户改过的值）
@@ -122,6 +128,20 @@ def main():
 
     api = Api()
     api._frameless = frameless   # 供前端 get_window_mode() 查询
+
+    # 更新善后：上次离线更新若正常完成，启动时通知用户新版本号
+    try:
+        upd = api.startup_update_check()
+        if upd.get("updated"):
+            print("[iChen] 上次更新已完成：", upd.get("updated_to", ""))
+            def _notify_updated():
+                import time as _t
+                _t.sleep(3)  # 等前端就绪
+                api.notify("更新完成", "已更新到 v" + str(upd.get("updated_to", "")), "info")
+            import threading as _th
+            _th.Thread(target=_notify_updated, daemon=True).start()
+    except Exception as e:
+        print("[iChen] 更新善后检查失败:", e)
 
     # ---- 系统托盘：关窗 = 隐藏，进程常驻 ----
     _force_quit = False

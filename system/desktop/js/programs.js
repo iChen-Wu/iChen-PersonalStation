@@ -1,7 +1,7 @@
 /* ============================================================
-   programs.js - 控制台"程序"面板：运行中的程序实例（手机后台式任务卡）
-   - 数据来自 AppFrame 的实例表（打开即常驻，切走挂后台）
-   - 操作：切到前台 / 终止（销毁实例）/ 勾选后批量终止
+   programs.js - 控制台"调度"面板：运行中的程序实例（手机后台式任务卡）
+   - 数据来自 AppFrame 的实例表（打开即常驻，切走挂调度）
+   - 操作：放到前台 / 终止（销毁实例）/ 勾选后批量终止
    ============================================================ */
 (function () {
     const iChen = window.iChen = window.iChen || {};
@@ -79,19 +79,12 @@
 
             const front = document.createElement('button');
             front.className = 'btn';
-            front.textContent = '切到前台';
+            front.textContent = p.active ? '已在前台' : '放到前台';
             front.disabled = !!p.active;
             front.addEventListener('click', () => {
-                if (iChen.Shell && p.zone) iChen.Shell.activate(p.zone); // Tab 同步
-                if (iChen.AppFrame) {
-                    ['settings-view', 'processes-view', 'welcome-view', 'appmgmt-view', 'automation-view'].forEach((id) => {
-                        const el = $(id);
-                        if (el) el.hidden = true;
-                    });
-                    $('stage-placeholder').hidden = true;
-                    iChen.AppFrame.show(p.id);
-                }
-                render();
+                // 先切到该 App 所属分区（Tab 同步、面板让位），再把它加进前台
+                if (iChen.Shell && p.zone) iChen.Shell.activate(p.zone);
+                if (iChen.AppFrame) iChen.AppFrame.addToStage(p.id);
             });
 
             const kill = document.createElement('button');

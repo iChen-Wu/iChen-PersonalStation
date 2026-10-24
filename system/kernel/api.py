@@ -7,6 +7,9 @@
 | `SettingsMixin` | `system/kernel/settings_mixin.py` | 设置（版本 / 状态 / 退出 / 调试） |
 | `WindowMixin` | `system/kernel/window_mixin.py` | 窗口控制（frameless 自绘标题栏用） |
 | `AutomationMixin` | `system/kernel/automation_mixin.py` | 自动化规则（app_open / cron 触发 → 运行 App） |
+| `NotifyMixin` | `system/kernel/notify_mixin.py` | 通知（应用内 toast + Windows 气球） |
+| `DiagnosticsMixin` | `system/kernel/diagnostics_mixin.py` | 诊断（最近日志 / 打开日志目录 / 导出诊断包） |
+| `UpdateMixin` | `system/kernel/update_mixin.py` | 中枢离线更新（zip / 文件夹 → updater.bat 接管） |
 | `AppsMixin` | `system/apphost/apps.py` | App 盒子：apps/ 扫描 + core.run + 文件通道 |
 | `AppEditMixin` | `system/apphost/app_edit.py` | App 编辑：改名 / 排序 / 移动 / 卸载 / 元数据 / 分区管理 |
 | `MiniappMixin` | `system/apphost/miniapp.py` | App 包导入导出（.miniapp）+ 依赖落位 |
@@ -21,11 +24,16 @@ from system.kernel.base import BaseApi
 from system.kernel.settings_mixin import SettingsMixin
 from system.kernel.window_mixin import WindowMixin
 from system.kernel.automation_mixin import AutomationMixin
+from system.kernel.notify_mixin import NotifyMixin
+from system.kernel.diagnostics_mixin import DiagnosticsMixin
+from system.kernel.update_mixin import UpdateMixin
 from system.apphost.apps import AppsMixin
 from system.apphost.app_edit import AppEditMixin
 from system.apphost.miniapp import MiniappMixin
 
 
-class Api(BaseApi, SettingsMixin, WindowMixin, AutomationMixin, AppsMixin, AppEditMixin, MiniappMixin):
+class Api(BaseApi, SettingsMixin, WindowMixin, AutomationMixin,
+          NotifyMixin, DiagnosticsMixin, UpdateMixin,
+          AppsMixin, AppEditMixin, MiniappMixin):
     """中控桥：所有 pywebview 可调用接口的集合"""
     pass

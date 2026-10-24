@@ -1,9 +1,11 @@
 /* ============================================================
-   appframe.js - 程序实例管理（多实例保活）+ 样式注入 + 桥
-   核心：一个 App 打开 = 一个常驻实例（独立 iframe，状态保留）。
-   - 切换 App / 切换主体 Tab：只切换显示，**不销毁、不重载**（后台挂起）
-   - 控制台"程序"面板可查看实例并手动终止（销毁 iframe）
-   - 通信：App → 父 {app, action, payload}；父执行后回执同构消息
+   appframe.js - 程序实例管理（调度式多窗口 · 实例保活）+ 样式注入 + 桥
+   核心：一个 App = 一个常驻实例（卡片 + iframe，状态保留）。
+   调度模型（仿 iPad 多窗口）：
+   - 列表点 App = 单调度：舞台上只留它，其余自动退回后台（保活）
+   - 后台调度器点 App = 多调度：把它加到舞台，与已有窗口并排（缝可拖宽）
+   - 单调度下再点同一个 App = 收起；多窗口下收起 = 从舞台移除该窗口
+   - 「关闭」：先调 core.teardown() 回收后台资源，再销毁实例
    ============================================================ */
 (function () {
     const iChen = window.iChen = window.iChen || {};
@@ -12,13 +14,51 @@
     // 桥标记：能被直接读取的场景（同源 iframe）下 App 可用它快速判定
     window.__ICHEN_BRIDGE__ = true;
 
-    /** appId -> { id, node, zone, iframe, openedAt } */
+    /** appId -> { id, node, zone, iframe, card, openedAt, blockedEl } */
     const instances = new Map();
-    let activeId = null;
+    /** 舞台上正在呈现的实例 id（有序，多个即并排调度） */
+    let stageIds = [];
+
+    // 分栏宽度会话内记忆（不持久化）：收起再调回仍沿用上次宽度
+    const growMem = new Map();
 
     const stage = () => $('stage');
     const placeholder = () => $('stage-placeholder');
     const zoneOf = (node) => String(node.path || '').split('/')[0] || '';
+
+    const DEFAULT_ICON = 'data:image/svg+xml;base64,' + btoa(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+        + '<rect x="8" y="8" width="48" height="48" rx="12" fill="#dbe7fb" stroke="#8fb0e6"/>'
+        + '<circle cx="32" cy="32" r="10" fill="#8fb0e6"/></svg>');
+
+    /* ---------- 卡片骨架 ---------- */
+    function buildCard(inst) {
+        const card = document.createElement('div');
+        card.className = 'appcard';
+        card.style.display = 'none';
+        card.dataset.appId = inst.id;
+
+        const head = document.createElement('div');
+        head.className = 'appcard-head';
+        const icon = document.createElement('img');
+        icon.className = 'appcard-icon';
+        icon.src = inst.node.icon_data || DEFAULT_ICON;
+        icon.alt = '';
+        const name = document.createElement('span');
+        name.className = 'appcard-name';
+        name.textContent = inst.node.name || inst.id;
+        // 右上不再放关闭/收起按钮：收起走列表再点，关闭走调度器右键「终止」
+        head.appendChild(icon);
+        head.appendChild(name);
+
+        const body = document.createElement('div');
+        body.className = 'appcard-body';
+        body.appendChild(inst.iframe);
+
+        card.appendChild(head);
+        card.appendChild(body);
+        return card;
+    }
 
     /* ---------- 挂载 ---------- */
     async function mount(inst) {
@@ -83,7 +123,7 @@
         handshake(inst.iframe);
     }
 
-    /** URL 型 App 无法嵌入时的舞台兜底：外部打开 / 重试嵌入 */
+    /** URL 型 App 无法嵌入时的卡片兜底：外部打开 / 重试嵌入 */
     function showUrlBlocked(inst, reason) {
         if (inst.blockedEl) return;
         const el = document.createElement('div');
@@ -114,7 +154,7 @@
         el.appendChild(h);
         el.appendChild(p);
         el.appendChild(actions);
-        stage().appendChild(el);
+        inst.iframe.parentElement.appendChild(el); // 卡片 body 内铺满
         inst.blockedEl = el;
     }
 
@@ -122,10 +162,15 @@
         const iframe = document.createElement('iframe');
         iframe.className = 'app-frame';
         iframe.dataset.appId = node.id;
-        iframe.hidden = true;
-        stage().appendChild(iframe);
 
-        const inst = { id: node.id, node: node, zone: zoneOf(node), iframe: iframe, openedAt: Date.now() };
+        const inst = {
+            id: node.id, node: node, zone: zoneOf(node), iframe: iframe,
+            openedAt: Date.now(),
+            grow: 1, // 默认等宽；用户拖缝后由 saveGrow 更新
+            blockedEl: null, card: null,
+        };
+        inst.card = buildCard(inst);
+        stage().appendChild(inst.card);
         iframe.onload = () => onLoaded(inst);
         instances.set(node.id, inst);
         mount(inst);
@@ -133,103 +178,191 @@
         return inst;
     }
 
-    /** 打开 App：已在运行则直接切过去（不重启）；否则新建实例 */
+    /* ---------- 舞台布局（调度式多窗口） ---------- */
+    /** 重排舞台：按 stageIds 顺序并排呈现（多窗口时缝可拖宽）；空则显示占位卡 */
+    function layoutStage() {
+        stage().querySelectorAll('.appcard-divider').forEach((d) => d.remove());
+        // 舞台列表对齐真实实例（实例被终止后会出现在这里）
+        stageIds = stageIds.filter((id) => instances.has(id));
+
+        instances.forEach((x) => { x.card.style.display = 'none'; });
+        // 关键：按 stageIds 顺序把卡片重新挂回 DOM，否则「先开 A 再开 B，收起 A 再点开 A」
+        // 会出现 stageIds=[B,A] 但 DOM 仍是 [A卡,B卡] 的顺序错乱，缝和 flex 都对不上
+        stageIds.forEach((id, i) => {
+            const inst = instances.get(id);
+            if (i > 0) stage().appendChild(makeDivider());
+            stage().appendChild(inst.card);
+            inst.card.style.display = 'flex';
+            inst.card.style.flexGrow = inst.grow;
+        });
+        // 舞台为空时显示一张空白圆角矩形
+        placeholder().hidden = stageIds.length > 0;
+        return stageIds.length;
+    }
+
+    /** 并排缝：缝两侧卡片按像素拖拽调宽，宽度写回实例并会话内记忆 */
+    function makeDivider() {
+        const d = document.createElement('div');
+        d.className = 'appcard-divider';
+        d.addEventListener('mousedown', (e) => {
+            const left = d.previousElementSibling, right = d.nextElementSibling;
+            if (!left || !right || !left.classList.contains('appcard') || !right.classList.contains('appcard')) return;
+            e.preventDefault();
+            d.classList.add('on');
+            // 全屏遮罩接管鼠标事件，避免快速划过 iframe 时被 iframe 吞掉而跟丢
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:col-resize;';
+            document.body.appendChild(overlay);
+            const total = left.offsetWidth + right.offsetWidth;
+            const startX = e.clientX, lw = left.offsetWidth;
+            const mv = (ev) => {
+                const nl = Math.min(Math.max(200, lw + ev.clientX - startX), total - 200);
+                left.style.flexGrow = nl;
+                right.style.flexGrow = total - nl;
+                saveGrow(left.dataset.appId, nl);
+                saveGrow(right.dataset.appId, total - nl);
+            };
+            const up = () => {
+                d.classList.remove('on');
+                overlay.remove();
+                document.removeEventListener('mousemove', mv);
+                document.removeEventListener('mouseup', up);
+            };
+            document.addEventListener('mousemove', mv);
+            document.addEventListener('mouseup', up);
+        });
+        return d;
+    }
+
+    function saveGrow(appId, grow) {
+        const inst = instances.get(appId);
+        if (inst) inst.grow = grow;
+        growMem.set(appId, grow);
+    }
+
+    /* ---------- 对外动作 ---------- */
+    /** 点分区列表里的 App = 单调度：舞台只留它。
+     *  它已是舞台唯一窗口时再点 = 收起；否则其余窗口自动退回后台（保活）。 */
     function open(node) {
         if (!node || node.type !== 'app') return null;
         const existing = instances.get(node.id);
-        if (existing) { show(node.id); return existing; }
+        if (existing) {
+            const solo = (stageIds.length === 1 && stageIds[0] === node.id);
+            if (solo) hide(node.id);
+            else soloStage(node.id);
+            return existing;
+        }
         const inst = createInstance(node);
-        show(node.id);
-        // 自动化：app_open 触发器（只在首次真正打开时触发，切换前台不重复触发）
+        soloStage(node.id);
+        if (iChen.UI) iChen.UI.animateIn(inst.card);
+        // 自动化：app_open 触发器（只在首次真正打开时触发，还原/聚焦不重复触发）
         if (iChen.Automation) {
             try { iChen.Automation.onAppOpen(node.id); } catch (e) { /* 忽略 */ }
         }
         return inst;
     }
 
-    /** 后台启动 App：只挂载实例（iframe 隐藏、逻辑随界面加载启动），前台保持不变。
-     *  已在运行则原样返回（不重启、不切前台），避免重复启动冲突。 */
+    /** 后台启动 App：只挂载实例（不上舞台），舞台保持不变。
+     *  已在运行则原样返回（不重启、不切舞台），避免重复启动冲突。 */
     function openBackground(node) {
         if (!node || node.type !== 'app') return { ok: false, error: 'App 节点非法' };
         const existing = instances.get(node.id);
         if (existing) return { ok: true, already: true };
-        createInstance(node); // iframe 初始即 hidden，不调用 show → 前台不动
+        createInstance(node);
+        layoutStage();
         return { ok: true };
     }
 
-    /** 显示某个实例（其余隐藏但保活） */
-    function show(id) {
+    /** 单调度：舞台清空只留这一个 */
+    function soloStage(id) {
         const inst = instances.get(id);
-        if (!inst) return;
-        activeId = id;
+        if (!inst) return false;
         hidePanels();
-        instances.forEach((x, key) => {
-            x.iframe.hidden = (key !== id);
-            if (x.blockedEl) x.blockedEl.hidden = (key !== id);
-        });
-        if (iChen.UI) iChen.UI.animateIn(inst.iframe); // 程序切前台淡入
-        placeholder().hidden = true;
+        stageIds = [id];
+        layoutStage();
+        notifyChange();
         document.dispatchEvent(new CustomEvent('ichen:instance-shown', { detail: { id: id, zone: inst.zone } }));
+        return true;
     }
+
+    /** 多调度：把它加到舞台末尾（已在本台则移到末尾），与已有窗口并排 */
+    function addToStage(id) {
+        const inst = instances.get(id);
+        if (!inst) return false;
+        hidePanels();
+        stageIds = stageIds.filter((x) => x !== id).concat([id]);
+        layoutStage();
+        notifyChange();
+        document.dispatchEvent(new CustomEvent('ichen:instance-shown', { detail: { id: id, zone: inst.zone } }));
+        return true;
+    }
+
+    /** 从舞台移除该窗口（退回后台、实例保活）；单窗口时等于收起 */
+    function hide(id) {
+        const inst = instances.get(id);
+        if (!inst || !stageIds.includes(id)) return false;
+        stageIds = stageIds.filter((x) => x !== id);
+        layoutStage();
+        notifyChange();
+        document.dispatchEvent(new CustomEvent('ichen:instance-shown', { detail: { id: null, zone: inst.zone } }));
+        return true;
+    }
+
+    /** 后台调度器点击：在舞台 加入 / 移除 之间切换（可多个窗口同时在场） */
+    function toggle(id) {
+        if (stageIds.includes(id)) return hide(id);
+        return addToStage(id);
+    }
+
+    function isOnStage(id) { return stageIds.includes(id); }
 
     function hidePanels() {
-        const s = $('settings-view');
-        const p = $('processes-view');
-        if (s) s.hidden = true;
-        if (p) p.hidden = true;
+        ['settings-view', 'processes-view', 'welcome-view', 'appmgmt-view', 'automation-view']
+            .forEach((pid) => { const el = $(pid); if (el) el.hidden = true; });
     }
 
-    /** 切主体（分区）：显示该分区中最近打开的实例；没有则舞台留空（其他实例保活挂后台） */
-    function showForZone(zone) {
-        let target = null;
-        instances.forEach((x) => { if (x.zone === zone) target = x; }); // 后进者优先
-        if (target) { show(target.id); return true; }
-        activeId = null;
-        instances.forEach((x) => {
-            x.iframe.hidden = true;
-            if (x.blockedEl) x.blockedEl.hidden = true;
-        });
-        // 无运行中的实例：舞台保持空白（不再显示「从左侧选择一个 App」遗留提示）
-        placeholder().hidden = true;
-        return false;
+    /** 切主体（分区）：舞台保持不变（窗口是全局的），只按当前调度重排 */
+    function showForZone() {
+        layoutStage();
+        notifyChange();
+        return stageIds.length > 0;
     }
 
-    /** 隐藏全部实例（面板显示时用；不销毁） */
+    /** 隐藏全部卡片（控制台面板显示时用；不销毁，舞台调度记忆保留） */
     function hideAll() {
-        instanceList().forEach((x) => {
-            x.iframe.hidden = true;
-            if (x.blockedEl) x.blockedEl.hidden = true;
-        });
+        instances.forEach((x) => { x.card.style.display = 'none'; });
+        stage().querySelectorAll('.appcard-divider').forEach((d) => d.remove());
         placeholder().hidden = true;
     }
 
-    /** 终止实例：先调 core.teardown() 回收后台资源（端口/线程），再销毁 iframe */
+    /** 让舞台回到当前调度状态（后台视图用：该显示的窗口照常显示） */
+    function renderStage() {
+        hidePanels();
+        layoutStage();
+    }
+
+    /** 收起到后台：卡片撤下、实例保活；后台调度器可调回 */
+    function minimize(id) { return hide(id); }
+
+    /** 终止实例：先调 core.teardown() 回收后台资源（端口/线程），再销毁卡片与 iframe */
     async function terminate(id) {
         const inst = instances.get(id);
         if (!inst) return false;
         // 后台回收必须先于 iframe 移除：App 起的端口/线程靠 teardown 钩子释放，
         // 只删 iframe 会留下孤儿线程（HTTP 端口仍可访问）。
         try { await iChen.PyAPI.terminateApp(id); } catch (e) { /* 回收失败也继续销毁界面 */ }
-        const wasActive = (activeId === id);
-        try { inst.iframe.remove(); } catch (e) { /* 忽略 */ }
+        try { inst.card.remove(); } catch (e) { /* 忽略 */ }
         try { if (inst.blockedEl) inst.blockedEl.remove(); } catch (e) { /* 忽略 */ }
         instances.delete(id);
+        stageIds = stageIds.filter((x) => x !== id);
+        layoutStage();
         notifyChange();
-        if (wasActive) {
-            activeId = null;
-            // 只在用户正停留在该 App 所属主体时才切到同区其它实例；
-            // 在控制台面板（后台 / App 管理 / 设置）里终止时保持当前面板，不跳走。
-            const currentZone = (iChen.Shell && iChen.Shell.getZone()) || null;
-            if (currentZone === inst.zone) {
-                showForZone(inst.zone);
-            }
-        }
         return true;
     }
 
     function instanceList() { return Array.from(instances.values()); }
 
-    /** 供控制台"程序"面板：实例摘要 */
+    /** 供控制台"程序"面板 / 后台调度器：实例摘要 */
     function listInstances() {
         return instanceList().map((x) => ({
             id: x.id,
@@ -237,12 +370,15 @@
             icon: x.node.icon_data || '',
             zone: x.zone,
             opened_at: x.openedAt,
-            active: x.id === activeId,
+            active: stageIds.includes(x.id),   // 在舞台上（前台）
+            stage: stageIds.indexOf(x.id),
         }));
     }
 
     function notifyChange() {
-        document.dispatchEvent(new CustomEvent('ichen:instances-changed', { detail: { count: instances.size } }));
+        document.dispatchEvent(new CustomEvent('ichen:instances-changed', {
+            detail: { count: instances.size, stage: stageIds.slice() },
+        }));
     }
 
     function themeOf() {
@@ -301,6 +437,20 @@
         try { inst.iframe.contentWindow.postMessage(reply, '*'); } catch (err) { /* 忽略 */ }
     });
 
+    /* ---------- 通知通道：App → 框架 → 中枢通知（状态栏 toast + 历史 + Windows 气球） ----------
+       App 界面发 { type:'ichen:notify', app, title, body, level }，与业务消息同一套来源校验。 */
+    window.addEventListener('message', async (e) => {
+        const m = e.data;
+        if (!m || typeof m !== 'object' || m.type !== 'ichen:notify') return;
+
+        const inst = findBySource(e.source);
+        if (!inst || inst.id !== m.app) {
+            console.warn('[AppFrame] 丢弃：通知来源非法', m.app);
+            return;
+        }
+        try { await iChen.PyAPI.notify(m.title, m.body, m.level, m.app); } catch (err) { /* 忽略 */ }
+    });
+
     window.addEventListener('message', async (e) => {
         const m = e.data;
         if (!m || typeof m !== 'object') return;
@@ -332,13 +482,19 @@
         else if (iChen.UI) iChen.UI.showToast('App 挂载失败：' + name);
     }
 
-    /** 重启实例：teardown 回收 → 销毁 iframe → 用原节点重新后台挂载（不切前台） */
+    /** 重启实例：teardown 回收 → 销毁实例 → 用原节点重新挂载；原本在舞台上则重启后回到舞台原位 */
     async function restart(id) {
         const inst = instances.get(id);
         if (!inst) return false;
         const node = inst.node;
+        const idx = stageIds.indexOf(id);
         await terminate(id);
         openBackground(node);
+        if (idx >= 0) {
+            stageIds.splice(Math.min(idx, stageIds.length), 0, id);
+            layoutStage();
+            notifyChange();
+        }
         return true;
     }
 
@@ -346,15 +502,22 @@
         init() { /* 无需 */ },
         open,
         openBackground,
-        show,
+        soloStage,
+        addToStage,
+        hide,
+        toggle,
+        minimize,
+        isOnStage,
         showForZone,
         hideAll,
+        renderStage,
         terminate,
         restart,
         notifyMountFailure,
         list: listInstances,
         count: () => instances.size,
-        current: () => instances.get(activeId) || null,
+        stageCount: () => stageIds.length,
+        current: () => (stageIds.length ? instances.get(stageIds[stageIds.length - 1]) : null),
         broadcastTheme: broadcastTheme,
     };
 })();

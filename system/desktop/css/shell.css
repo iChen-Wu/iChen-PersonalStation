@@ -1,7 +1,7 @@
 /* ============================================================
-   iChen 前端 - 新壳布局样式（v0.9 定稿：App 桌面）
-   - 顶部状态栏（玻璃，不导航）+ 左侧竖 Tab 栏（工作区/空间/设置）
-   - 列表区约 1/4 宽（可折叠，目录树）+ 舞台（iframe 全权交给 App）
+   iChen 前端 - 新壳布局样式（v3.2.0：圆角卡片壳层）
+   - 无顶部状态栏；左侧 Tab 栏 + 列表区通高压在底层
+   - 舞台内容（App 卡片 / 面板）圆角浮起，上/右/下露 10px 底缝
    - 视觉语言沿用原版（git HEAD）：玻璃模糊/渐变/圆角/inset 薄高光/柔和阴影，
      令牌来自 css/tokens.css（shared/css 的运行副本）
    ============================================================ */
@@ -15,58 +15,37 @@ body {
     background: var(--color-bg);
 }
 
+/* 底层统一色：除 App 卡片外的所有区域（Tab 栏 / 列表 / 舞台底缝 / 自绘标题栏）
+   都是同一种底色，形成「App 卡片浮在一片同质底上」的遮蔽关系。 */
+:root {
+    --layer-base: #eef0f4;          /* 浅色：比 #edf2fa 更淡、少一点蓝 */
+    --card-solid: #ffffff;          /* App 卡片/面板：实心不透明，避免列表透过来 */
+}
+@media (prefers-color-scheme: dark) {
+    :root { --layer-base: #2b2e34; --card-solid: #35383e; }   /* 深色：提亮去蓝，中性深灰 */
+}
+:root[data-theme="dark"]  { --layer-base: #2b2e34; --card-solid: #35383e; }
+:root[data-theme="light"] { --layer-base: #eef0f4; --card-solid: #ffffff; }
+
 /* ---------- 主壳 ---------- */
 .shell {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column;
-    /* 沿用原工作区背景：中间基准色、向两边渐变近白，无分层 */
-    background: linear-gradient(90deg, var(--color-bg) 0%, var(--ws-bg) 50%, var(--color-bg) 100%);
-
-    /* 三层底色（用户：从深到浅 = 状态栏 > Tab 栏 > 列表） */
-    --layer-state: #e4eaf4;                    /* 状态栏：最深 */
-    --layer-tab: rgba(237, 242, 250, 0.85);    /* Tab 栏：中（有可见底色） */
-    --layer-list: rgba(253, 254, 255, 0.72);   /* 列表：最浅（近白） */
+    background: var(--layer-base);
 }
 .shell.hidden { display: none; }
-
-/* 深色模式下的三层底色（暗→亮顺序不变） */
-@media (prefers-color-scheme: dark) {
-    .shell { --layer-state: #161a26; --layer-tab: #1e2534; --layer-list: #262e40; }
-}
-:root[data-theme="dark"] .shell { --layer-state: #161a26; --layer-tab: #1e2534; --layer-list: #262e40; }
-:root[data-theme="light"] .shell { --layer-state: #e4eaf4; --layer-tab: rgba(237, 242, 250, 0.85); --layer-list: rgba(253, 254, 255, 0.72); }
-
-/* ----- 顶部状态栏（玻璃，v0.9：不放东西、不承担导航） -----
-   三层玻璃：状态栏最浅（浅蓝玻璃）→ Tab 栏中间（半透白）→ 列表区最实（近白）
-   层次靠 backgrounds / blur / 阴影强度区分，不再一片相同 */
-.topbar {
-    flex: 0 0 48px;
-    height: 48px;
-    display: flex; align-items: center; justify-content: flex-start;
-    padding-left: 9px; /* 左侧按钮中心对齐 Tab 栏中心（50/2=25） */
-    gap: 10px;
-    background: var(--layer-state);
-    -webkit-backdrop-filter: blur(var(--glass-bar-blur)); backdrop-filter: blur(var(--glass-bar-blur));
-    border-bottom: 1px solid var(--glass-border);
-    box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow-sm);
-    z-index: 20;
-    user-select: none;
-}
 
 /* ----- 主体行：Tab 栏 + 列表区 + 舞台 ----- */
 .shell-row { flex: 1; display: flex; min-height: 0; }
 
-/* ----- 左侧竖长条 Tab 栏（玻璃竖条） ----- */
+/* ----- 左侧竖长条 Tab 栏（底层，与列表同色） ----- */
 .tabbar {
     flex: 0 0 50px;
     position: relative;
-    z-index: 2; /* 高于列表区：折叠时列表滑到 Tab 栏“后面” */
+    z-index: 3; /* 高于舞台：折叠时舞台向左覆盖列表，但不盖住 Tab 栏 */
     display: flex; flex-direction: column; align-items: stretch; gap: 6px;
     padding: 12px 6px;
-    background: var(--layer-tab);
-    -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur));
-    border-right: 1px solid var(--glass-border);
-    box-shadow: inset 0 1px 0 var(--glass-highlight), 1px 0 12px rgba(15, 23, 42, 0.04); /* 玻璃高光 + 右侧分离影 */
+    background: var(--layer-base);
 }
 .tabbar .tab {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
@@ -130,32 +109,29 @@ body {
     min-height: 0; overflow-y: auto; overflow-x: hidden;
 }
 
-/* ----- 列表区（1/4 宽近白玻璃，可折叠；沿用原下拉面板语言） ----- */
+/* ----- 列表区（底层，与 Tab 栏同色；宽度 --lpw 可调） ----- */
 .listpane {
-    flex: 0 0 clamp(170px, 17vw, 230px); /* 约原宽度 2/3 */
-    position: relative;
-    z-index: 1; /* 低于 Tab 栏：滑出时钻到 Tab 栏后面 */
+    flex: 0 0 var(--lpw, clamp(170px, 17vw, 230px));
+    position: relative;        /* 不设 z-index：让内部拖宽手柄的 z-index 能上浮到舞台之上 */
     display: flex; flex-direction: column; min-height: 0;
-    background: var(--layer-list); /* 三层中最浅（近白玻璃） */
-    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
-    border-right: 1px solid var(--glass-border);
-    box-shadow: inset 0 1px 0 var(--glass-highlight), 2px 0 16px rgba(15, 23, 42, 0.05); /* 分离影：浮于内容区之上 */
-    /* 折叠：宽度恒定（内部内容不被压缩、不跳动），只做平移滑出 + margin 让位 */
-    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-                margin-left 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.26s ease,
-                border-right-color 0.28s ease,
-                box-shadow 0.28s ease;
+    background: var(--layer-base);
 }
-/* 折叠：整体向左平移滑出（抽屉式，滑入 Tab 栏后方并淡出）；margin-left 负值让位给内容区 */
+/* 折叠：列表原地不动，舞台向左平移把它盖住（层级遮蔽，列表文字留在底层） */
 .shell-row.collapsed .listpane {
-    transform: translateX(-100%);
-    margin-left: calc(-1 * clamp(170px, 17vw, 230px));
-    opacity: 0;
     pointer-events: none;
-    border-right-color: transparent;
-    box-shadow: none;
 }
+html:not([data-tabbar="bottom"]) .shell-row.collapsed .stage {
+    margin-left: calc(-1 * var(--lpw, clamp(170px, 17vw, 230px)));
+}
+/* 拖宽手柄：贴在列表区右缘，随列表一起滑出 */
+.lp-resize {
+    position: absolute; top: 0; bottom: 0; right: -3px;
+    width: 6px; z-index: 5;
+    cursor: col-resize;
+}
+.lp-resize:hover { background: rgba(59, 130, 246, 0.18); }
+/* 拖动中关掉列表过渡，避免宽度跟着动画滞后 */
+.shell-row.lp-dragging .listpane { transition: none; }
 .listpane-head {
     display: flex; align-items: center; gap: 4px;
     padding: 12px 10px 10px;
@@ -227,14 +203,68 @@ body {
 .trow-children { padding-left: 18px; }
 .tree-empty-note { color: var(--color-text-muted); font-size: 12px; padding: 4px 8px 8px; line-height: 1.8; }
 
-/* ----- 舞台（App 内容区，全权交给 iframe） ----- */
-.stage { flex: 1; position: relative; min-width: 0; background: transparent; }
-.stage iframe {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    border: 0; background: var(--color-bg);
+/* ----- 舞台（浮在列表之上：折叠时向左覆盖列表；App 卡片容器） ----- */
+.stage {
+    flex: 1; position: relative; z-index: 2; min-width: 0;
+    display: flex;
+    padding: 10px 10px 10px 0;
+    background: transparent;
+    /* 空白时可选背景：纯色 / 自定义图片，覆盖在底层之上、卡片之下 */
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+    transition: margin-left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* App 实例卡片：同分区多开自动分栏，缝中可拖拽调宽 */
+.appcard {
+    flex: 1 1 0; min-width: 200px;
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--card-solid);   /* 实心不透明：覆盖下方列表，不透字 */
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: inset 0 0 0 1px var(--glass-highlight), var(--shadow-sm);
+    overflow: hidden;
+    z-index: 1;
+}
+.appcard-head {
+    flex: 0 0 40px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 14px;
+    font-size: 13px; color: var(--color-text);
+    border-bottom: 1px solid var(--color-border-soft);
+    user-select: none;
+}
+.appcard-icon { width: 18px; height: 18px; flex: 0 0 18px; border-radius: 5px; }
+.appcard-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appcard-body { flex: 1; position: relative; min-height: 0; }
+.appcard-body iframe.app-frame {
+    width: 100%; height: 100%; border: 0; display: block;
+    background: var(--color-bg);
+}
+
+/* 卡片间拖拽缝（后台调度多窗口时出现） */
+.appcard-divider { flex: 0 0 10px; position: relative; cursor: col-resize; z-index: 2; }
+.appcard-divider::after {
+    content: ''; position: absolute; left: 4px; top: 0; bottom: 0;
+    width: 2px; border-radius: 1px;
+    background: transparent; transition: background var(--transition-fast);
+}
+.appcard-divider:hover::after, .appcard-divider.on::after { background: rgba(59, 130, 246, 0.35); }
+
+/* 面板（设置/接入/后台/App 管理/自动化）：铺满舞台的圆角卡片，与 App 卡片同规格露缝 */
+.stage .settings-view, .stage .welcome-view, .stage .processes-view,
+.stage .appmgmt-view, .stage .automation-view {
+    top: 10px; right: 10px; bottom: 10px; left: 0;
+    background: var(--card-solid);   /* 实心不透明 */
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: inset 0 0 0 1px var(--glass-highlight), var(--shadow-sm);
 }
 .stage-placeholder {
-    position: absolute; inset: 0;
+    position: absolute; top: 10px; right: 10px; bottom: 10px; left: 0;
+    background: var(--card-solid);   /* 默认卡片实色；设置里选了背景时被 JS 覆盖 */
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: inset 0 0 0 1px var(--glass-highlight), var(--shadow-sm);
     display: flex; align-items: center; justify-content: center;
     color: var(--color-text-faint); font-size: 14px;
     user-select: none;
@@ -278,6 +308,19 @@ body {
 }
 .theme-option:hover { background: var(--color-bg-hover); }
 .theme-option.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* 主题色 → 自定义：浅/深两个取色器 */
+.accent-custom-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 6px 2px 4px;
+    color: var(--color-text-secondary); font-size: 13px;
+}
+.accent-color-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.accent-color-label input[type="color"] {
+    width: 36px; height: 26px; padding: 0; border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm); background: transparent; cursor: pointer;
+}
+.accent-color-label input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.accent-color-label input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .toggle-btn {
     position: relative; width: 42px; height: 22px; border-radius: var(--radius-full);
     border: 0; background: var(--color-bg-soft); cursor: pointer;
@@ -540,11 +583,7 @@ body {
 .pc-actions { display: flex; gap: 8px; }
 .pc-actions .btn { flex: 1; padding: 6px 8px; font-size: 12px; }
 
-/* 舞台层序：程序实例 iframe 在下，面板在上 */
-.stage .app-frame {
-    position: absolute; inset: 0; z-index: 1;
-    width: 100%; height: 100%; border: 0; background: var(--color-bg);
-}
+/* 舞台层序：App 卡片（z-index:1）在下，面板（z-index:3）在上 */
 .stage .settings-view, .stage .processes-view,
 .stage .welcome-view, .stage .appmgmt-view,
 .stage .automation-view { z-index: 3; }
@@ -562,7 +601,7 @@ body {
     to   { opacity: 1; }
 }
 .fade-in { animation: ich-fade-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.stage .app-frame.fade-in { animation: ich-fade-in-soft 0.22s ease both; }
+.stage .appcard.fade-in { animation: ich-fade-in-soft 0.22s ease both; }
 /* 设置 / 程序面板内的分块依次淡入，避免整体生硬 */
 .settings-section, .program-card { animation: ich-fade-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .program-card:nth-child(2) { animation-delay: 0.03s; }
@@ -579,14 +618,12 @@ body {
     align-items: center;
     height: 32px;
     flex: 0 0 32px;
-    background: var(--glass-topbar, rgba(255, 255, 255, 0.72));
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    background: var(--layer-base);   /* 与底层同色，作为窗口拖动区，不另起一层 */
     user-select: none;
 }
 
 /* frameless：标题栏固定在窗口顶部，与下方 .shell（top:32px）严格对齐、无缝；
-   不画底边分割线（由 topbar 自身的顶部高光承担层次），避免两条玻璃之间出现空缝。 */
+   与主壳同底色，视觉上是同一片底层的上沿。 */
 html.frameless .titlebar {
     position: fixed; top: 0; left: 0; right: 0;
     z-index: 30;
@@ -643,7 +680,7 @@ html.frameless .shell { top: 32px; height: auto; }
    100% 宽的 Tab 栏会被误判"放得进上排"而窜到顶部。网格里 Tab 栏钉死第二行，与列宽无关。 */
 html[data-tabbar="bottom"] .shell-row {
     display: grid;
-    grid-template-columns: clamp(170px, 17vw, 230px) minmax(0, 1fr);
+    grid-template-columns: var(--lpw, clamp(170px, 17vw, 230px)) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) 50px;
     transition: grid-template-columns 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }

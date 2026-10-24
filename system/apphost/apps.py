@@ -36,6 +36,7 @@ _PICK_FILETYPES = {
     "svg": ("SVG 图标 (*.svg)", "所有文件 (*.*)"),
     "json": ("JSON (*.json)", "所有文件 (*.*)"),
     "miniapp": ("iChen App 包 (*.miniapp)", "所有文件 (*.*)"),
+    "zip": ("iChen 更新包 (*.zip)", "所有文件 (*.*)"),
     "all": ("所有文件 (*.*)",),
 }
 

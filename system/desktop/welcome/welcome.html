@@ -1,0 +1,162 @@
+<!-- 接入面板内容（控制台 → 接入）。独立文件便于热改动：改这里不用动 index.html。
+     由 js/shell.js 的 initWelcomeView() 在启动时 fetch 注入到 #welcome-view。
+     注意：完整开发规格原文在 js/welcome-doc.js（window.__ICHEN_WELCOME_DOC__）。 -->
+<div class="settings-wrap welcome-wrap">
+    <h2>接入 iChen</h2>
+
+    <div class="settings-section welcome-hero">
+        <div class="settings-section-title">最快的方式：让 AI 帮你做 App</div>
+        <div class="welcome-text">
+            点下面按钮，复制一份<b>完整开发规格</b>，再加上你的一句话需求（例如「做一个记录每日饮水次数的小工具」）发给任意 AI，
+            它就能按规格把 App 文件直接生成好——把文件夹放进 <code>apps/分区/</code>，重开中枢即可使用，无需改动中枢本身。
+        </div>
+        <div class="welcome-doc-actions">
+            <button class="btn btn-primary" id="welcome-copy-doc">复制完整开发规格（直接发给 AI）</button>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">这是什么</div>
+        <div class="welcome-text">
+            iChen 是一个 Windows 桌面中枢。中枢本身只保留两样东西：<b>桌面</b>（左侧分区 + 列表 + 工作区）和
+            <b>调度</b>（正在运行的 App 实例）。其余一切功能都以 <b>App</b> 的形式存在——
+            一个 App 就是 <code>apps/</code> 里的一个文件夹，可以随时新建、改名、搬移、删除，不需要安装。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">界面怎么用</div>
+        <ul class="welcome-list">
+            <li><b>最左侧竖栏</b>：分区（Tab）。每个分区对应 <code>apps/</code> 下的一个一级文件夹；最下面是「控制台」。</li>
+            <li><b>列表区</b>：当前分区里的分类与 App，点 App 即在右侧工作区打开；顶部标题可右键管理整个分区。</li>
+            <li><b>保活</b>：切换 App 或分区不会关闭它，只有在「控制台 → 调度」里点「终止」才真正结束。</li>
+            <li><b>右键菜单</b>：在列表里右键文件夹可新建 App / 文件夹、重命名、删除；在空白处右键可新建。</li>
+            <li><b>系统托盘</b>：关闭窗口只是收进托盘，进程和运行中的 App 继续运行；托盘菜单可「打开」或「退出」。</li>
+            <li><b>设置</b>：主题、Tab 栏位置、无边框窗口都在「控制台 → 设置」，部分设置重启后生效。</li>
+        </ul>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">一个 App 由什么组成</div>
+        <div class="welcome-text">
+            中枢按目录扫描，只认文件、不认注册表：
+        </div>
+        <table class="welcome-table">
+            <thead><tr><th>文件夹里有</th><th>判定</th><th>说明</th></tr></thead>
+            <tbody>
+                <tr><td><code>manifest.json</code></td><td><b>App</b></td><td>App 的名片，叶子节点，不再向下扫描</td></tr>
+                <tr><td><code>folder.json</code></td><td>分区 / 分类</td><td>提供显示名、图标、顺序，可继续向下嵌套</td></tr>
+                <tr><td>两个都没有</td><td>普通文件夹</td><td>兜底，按文件夹名显示，仍可向下扫描</td></tr>
+            </tbody>
+        </table>
+        <div class="welcome-note">
+            App 的三个标准文件：<code>manifest.json</code>（名片，必有）、
+            <code>ui/index.html</code>（界面）、<code>core.py</code>（后端逻辑，可选）。
+            <code>__pycache__</code> 和点开头的隐藏目录会被跳过；App 不能直接放在 <code>apps/</code> 根层。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">App 的类型</div>
+        <div class="welcome-types">
+            <div class="type-chip"><b>逻辑型</b>有界面 + <code>core.py</code>。界面发消息，中枢在本地进程调用 <code>run()</code>。最常用。</div>
+            <div class="type-chip"><b>纯界面型</b>只有 <code>ui/index.html</code>，无后端。适合小工具、静态页面、小游戏。</div>
+            <div class="type-chip"><b>URL 型</b><code>type:"url"</code>。界面就是一个网址，嵌在中枢内，或用系统浏览器打开。</div>
+            <div class="type-chip"><b>后台服务型</b><code>type:"service"</code>。常驻端口 / 调度 / 长连接，必须实现 <code>teardown()</code>。</div>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">manifest.json 字段（App 名片）</div>
+        <table class="welcome-table welcome-table-fields">
+            <thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead>
+            <tbody>
+                <tr><td><code>name</code></td><td>是</td><td>显示名，可中文</td></tr>
+                <tr><td><code>id</code></td><td>是</td><td>全局唯一标识，英文小写 + 点（如 <code>demo.hello</code>），通信 / 日志都用它，勿含中文</td></tr>
+                <tr><td><code>version</code></td><td>否</td><td>版本号，建议 <code>x.y.z</code></td></tr>
+                <tr><td><code>description</code></td><td>否</td><td>一句话说明，显示在列表里</td></tr>
+                <tr><td><code>icon</code></td><td>否</td><td>图标路径（相对 App 目录），建议 SVG；缺省用默认图标</td></tr>
+                <tr><td><code>order</code></td><td>否</td><td>同层排序，小的在前；缺省按名称排</td></tr>
+                <tr><td><code>ui</code></td><td>否</td><td>界面路径，默认 <code>ui/index.html</code>，必须在 App 目录内</td></tr>
+                <tr><td><code>entry</code></td><td>否</td><td>逻辑入口，默认 <code>core.py</code>，必须在 App 目录内</td></tr>
+                <tr><td><code>type</code></td><td>否</td><td><code>logic</code> / <code>ui</code> / <code>url</code> / <code>service</code></td></tr>
+                <tr><td><code>url</code>、<code>container</code></td><td>URL 型</td><td>网址；<code>container</code> 为 <code>iframe</code>（默认）或 <code>external</code>（系统浏览器）</td></tr>
+                <tr><td><code>requires</code></td><td>否</td><td>依赖声明：<code>shared</code>（shared/ 下模块名）+ <code>py</code>（pip 库），导出 miniapp 时按此打包依赖</td></tr>
+            </tbody>
+        </table>
+        <div class="welcome-note">
+            分区 / 分类的 <code>folder.json</code> 更简单：<code>name</code> / <code>icon</code> / <code>order</code> / <code>description</code>，
+            均可选；不写也会以文件夹名正常显示。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">界面如何调用后端（桥协议）</div>
+        <ul class="welcome-list">
+            <li>App 界面运行在独立 iframe 里，加载后中枢先注入共享样式并发握手消息 <code>{"type":"ichen:bridge"}</code>，收到即表示已接入。</li>
+            <li>界面发 <code>window.parent.postMessage({app, action, payload}, "*")</code>，<code>app</code> 必须等于本 App 的 <code>id</code>。</li>
+            <li>中枢调用 <code>core.py</code> 的 <code>run({"action":..., "payload":...})</code>，并把返回 dict 作为同构消息回执给界面。</li>
+            <li>主题切换时收到 <code>{"type":"ichen:theme", theme}</code>，需设置 <code>document.documentElement.dataset.theme</code>。</li>
+            <li>界面必须自包含：浏览器直接打开（独立模式）也要能用内置演示数据渲染。</li>
+        </ul>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">中枢提供的样式基座</div>
+        <div class="welcome-text">
+            加载时中枢会注入共享样式（<code>tokens.css + components.css</code>），界面直接用 CSS 变量
+            （<code>--color-bg</code> / <code>--color-text</code> / <code>--accent</code> / <code>--radius-md</code> / <code>--shadow-sm</code>…）
+            和组件类（<code>.btn</code> / <code>.btn-primary</code> / <code>.toast</code>…），深浅主题自动跟随。
+            不要写死颜色值，也不要重复造同类组件样式。完整清单见下方规格原文第十二节。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">core.py 与后台资源</div>
+        <ul class="welcome-list">
+            <li>入口签名固定：<code>def run(params: dict) -&gt; dict</code>，成功返回带 <code>ok: true</code> 的 dict，失败返回 <code>{"ok": false, "error": "..."}</code>。</li>
+            <li>模块按 <code>id</code> 缓存，模块级状态在多次调用间存活；文件改动后下次调用自动热重载。</li>
+            <li>App 自身数据写 <code>APP_DATA_DIR</code>（core 里读注入的全局变量），或用户经文件通道选定的位置。</li>
+            <li>在后台开了线程 / 端口 / 长连接时，实现可选的 <code>teardown()</code>：实例被终止或中枢退出时框架先调用它释放资源。</li>
+            <li><code>run()</code> 同步执行、当前无超时，避免长阻塞。</li>
+        </ul>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">选择本地文件 / 目录（文件通道）</div>
+        <div class="welcome-text">
+            iframe 里读不到本地路径。需要打开文件、选择目录或另存为时，向中枢发
+            <code>{"type":"ichen:pick-file", app, requestId, mode, multiple, filter}</code>
+            （<code>mode</code>：<code>open</code> / <code>folder</code> / <code>save</code>；
+            <code>filter</code>：<code>image</code> / <code>json</code> / <code>all</code>），
+            系统对话框选出的绝对路径通过 <code>ichen:pick-file-result</code> 定向回执，再交给 <code>core.py</code> 真实读写。
+            用户取消不是错误；独立模式下该通道不可用，应提示「请在中枢内打开」，不得伪造成功。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">数据与安全红线</div>
+        <ul class="welcome-list">
+            <li>自身数据写中枢 <code>data/appdata/&lt;app_id&gt;/</code>（core 里读注入的 <code>APP_DATA_DIR</code>），或用户经文件通道选定的位置；不写系统目录、不访问其他 App。</li>
+            <li><code>entry</code> / <code>ui</code> / <code>icon</code> 只能是 App 目录内的相对路径，绝对路径与 <code>..</code> 一律拒绝。</li>
+            <li>图标只用 SVG 文件，不用 emoji 当图标；界面不依赖外网资源。</li>
+            <li>不在独立模式或未连接服务时伪造结果，要给明确提示。</li>
+        </ul>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">从零到能用（5 步）</div>
+        <ol class="welcome-list welcome-steps">
+            <li>在某个分区下新建 App 文件夹（或在列表空白处右键 → 新建 App，由向导生成骨架）。</li>
+            <li>放入 <code>manifest.json</code>（写好 name 与唯一 id）与 <code>icon.svg</code>。</li>
+            <li>写 <code>ui/index.html</code>：先保证浏览器直接打开能渲染，再接入桥消息。</li>
+            <li>需要后端就加 <code>core.py</code>，按 <code>action</code> 分发、返回 dict；有后台资源就实现 <code>teardown()</code>。</li>
+            <li>重开中枢：列表里出现 App，点击打开联调；「控制台 → 调度」可查看与终止实例。</li>
+        </ol>
+    </div>
+
+    <details class="settings-section welcome-doc-details">
+        <summary>查看完整开发规格原文（就是上面按钮复制的内容）</summary>
+        <pre class="welcome-doc-pre" id="welcome-doc-view"></pre>
+    </details>
+</div>

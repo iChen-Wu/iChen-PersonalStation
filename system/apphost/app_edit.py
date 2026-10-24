@@ -171,6 +171,20 @@ class AppEditMixin:
         return {"ok": True, "path": str(target.relative_to(APPS_ROOT.resolve()).as_posix())}
 
     # ==================== 卸载 / 删除 ====================
+    def update_app(self, app_id: str, package_path: str) -> Dict[str, Any]:
+        """供 App 自我更新：App 自行取得新版包（zip / 文件夹）放到本地后，
+        把路径交给中枢接管安装。接口形状先稳定，实现将在后续版本提供。
+
+        预定流程：
+        1. 校验 package_path 内含合法 manifest.json 且 id 与 app_id 一致、版本更高；
+        2. terminate_app(app_id) 停掉运行中的实例（含 teardown 释放端口/线程）；
+        3. 备份 apps/<app_dir>/ 到 data/updates/apps_backup/<app_id>_<旧版本>/；
+        4. 用新包覆盖 App 目录（保留 data/ 子目录，那是 App 的用户数据）；
+        5. 通知前端刷新该 App 在列表中的元数据。
+        """
+        return {"ok": False, "error": "未实现：App 更新接口将在后续版本提供",
+                "app_id": str(app_id or ""), "package_path": str(package_path or "")}
+
     def delete_app(self, app_id: str, confirm: bool = False) -> Dict[str, Any]:
         """卸载 App（删除其目录）。必须显式 confirm。"""
         if not confirm:

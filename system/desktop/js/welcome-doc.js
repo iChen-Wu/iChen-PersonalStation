@@ -77,13 +77,15 @@ apps/
 
 只承载展示信息；不写 folder.json 的文件夹也会以文件夹名正常显示。
 
-## 四、App 的三种常用类型
+## 四、App 的类型
 
-1. 逻辑型（type 写 logic 或省略）：有 ui/index.html + core.py。界面发消息给中枢，中枢在本地进程内调用 core.py 的 run()。
-2. 纯界面型（type: "ui"）：只有 ui/index.html，无后端，适合小工具、静态页面。
+1. 逻辑型（type 写 logic 或省略）：有 ui/index.html + core.py。界面发消息给中枢，中枢在本地进程内调用 core.py 的 run()。**最常用**。
+2. 纯界面型（type: "ui"）：只有 ui/index.html，无后端。适合小工具、静态页面、纯前端小游戏。
 3. URL 型（type: "url"）：只有 manifest.json + 图标，界面直接是一个网址：
    { "name": "示例", "id": "url.example", "type": "url", "url": "https://example.com", "container": "iframe", "icon": "icon.svg" }
    container 写 external 则改用系统浏览器打开。
+4. 后台服务型（type: "service"）：常驻后台逻辑（HTTP 端口、定时调度、长连接），可带界面也可不带，必须实现 teardown() 释放资源。参考 apps/work/hello/。
+
 （对话型 chat 由中枢系统层提供，不要自行实现。）
 
 ## 五、ui/index.html 界面约定
@@ -279,4 +281,115 @@ function pickFile() {
 
 - 给出完整文件树（相对 apps/ 的路径）。
 - 逐个给出每个文件的完整内容，不要省略、不要写「其余同上」。
-- 界面文案与代码注释使用中文；id 全局唯一；不新增对中枢代码的修改。`;
+- 界面文案与代码注释使用中文；id 全局唯一；不新增对中枢代码的修改。
+
+## 十二、中枢提供的共享样式（不要自己再造）
+
+中枢在 iframe 加载完成后会发 { type: "ichen:css", css, theme }，把 shared/common/css/tokens.css + components.css 的全部内容注入进来。你只需 new 一个 <style> 把 m.css 追加到 head 即可（见 5.2 模板）。
+
+提供给你的样式基座：
+
+### 12.1 CSS 变量（颜色 / 圆角 / 阴影 / 字号，深浅双主题自动切换）
+
+颜色（**优先用这些变量**，不要写死颜色值）：
+- 背景：--color-bg（主背景）/ --color-bg-muted（次背景）/ --color-bg-soft（三级）/ --color-bg-hover（悬停）/ --bg-card（玻璃卡）/ --bg-input（输入底）
+- 文本：--color-text（主）/ --color-text-secondary（次）/ --color-text-muted（弱）/ --color-text-faint（最弱）
+- 边框：--color-border / --color-border-soft / --color-border-strong
+- 主色：--accent / --accent-hover / --accent-light / --accent-gradient（蓝调）/ --color-primary
+- 语义：--success / --warning / --danger
+
+圆角：--radius-xs(4) / --radius-sm(8) / --radius-md(12) / --radius-lg(16) / --radius-xl(24) / --radius-full
+阴影：--shadow-xs / --shadow-sm / --shadow-md / --shadow-lg / --shadow-inner
+过渡：--transition-fast(0.2s) / --transition-normal(0.3s) / --transition-smooth(0.4s 弹性)
+字体：--font-family
+
+主题切换：当用户切深浅主题，中枢会发 { type:"ichen:theme", theme:"light"|"dark"|"system" }，你只需：
+  document.documentElement.dataset.theme = m.theme;
+然后**全部用上面的 CSS 变量**，浅色深色会自动切换。禁止写死 #fff #000。
+
+### 12.2 通用组件类（直接加到 HTML 上就能用）
+
+按钮：
+- .btn —— 基础按钮（灰底，悬停变浅）
+- .btn.btn-primary —— 主按钮（蓝色渐变，提交 / 确认用）
+- .btn.btn-dark —— 次按钮（深色）
+- .btn.btn-square —— 方形 32×32 图标按钮
+- 加 disabled 属性自动置灰
+
+反馈：
+- .toast —— 顶部 toast 提示，加 .show 类显示
+- .fade-in —— 淡入动画（进入视图时加一次）
+
+布局：
+- .toolbar-spacer —— flex 填充，把右侧按钮推到末尾
+- .layer —— 全屏绝对定位容器（覆盖在 body 上）
+
+**示例**：
+  <button class="btn">取消</button>
+  <button class="btn btn-primary">确定</button>
+  <div class="toast show">已保存</div>
+
+### 12.3 不推荐的写法
+
+- ❌ 自己定义 .btn / .card / .input 等同类样式 → 改用上面已有的类，或在类名上加自己的前缀
+- ❌ 写死 background: #fff / color: #000 → 改用 var(--color-bg) var(--color-text)
+- ❌ 引入自己的字体文件 → 用 var(--font-family)
+- ❌ 全局选择器 * / body 覆写中枢样式 → 你的样式作用域只在 iframe 内，但仍要避免
+
+## 十三、shared/ 与 common/ 模块速查
+
+App 的 core.py 可以 import shared/ 和 shared/common/ 下的模块（中枢已把它们加进 sys.path）：
+
+### 13.1 common.paths —— 路径工具（**必选**，不要自己拼路径）
+
+  from common.paths import app_data_dir, DATA_DIR, APPS_ROOT
+
+  app_data_dir(app_id) -> Path   # 当前 App 的私有数据目录，已自动创建
+  DATA_DIR -> Path                # 中枢数据根目录
+  APPS_ROOT -> Path               # apps/ 根目录
+
+或更简单：**直接用注入的全局变量 APP_DATA_DIR**（在 core.py 的 run()/函数内读取，不要在模块顶层）：
+
+  def run(params):
+      from pathlib import Path
+      my_db = Path(APP_DATA_DIR) / "data.db"   # 推荐
+
+### 13.2 shared/GYun —— 实体库（数据持久化）
+
+如果 App 需要持久化业务实体（笔记、提醒、任务、账单……），用 shared/GYun 而不是自建数据库：
+- manifest.json 的 requires.shared 里加 ["GYun"]
+- core.py 里 from GYun import ... （具体 API 见 shared/GYun/__init__.py 的导出）
+
+### 13.3 其它 shared 模块
+
+shared/ 下其它目录是可复用的中枢模块（网络、文件等）。manifest 的 requires.shared 写明后，导出 miniapp 包时会一起打进去。
+
+## 十四、调试与排错
+
+- iframe 里 console.log / console.error 在哪看？
+  在中枢窗口右键 → 检查（或在标题栏按 F12，如果开了开发者模式）打开 DevTools，切到对应 iframe 的 console。
+- 桥消息没收到回执？
+  1. 检查 app 字段是否完全等于 manifest.id（区分大小写）
+  2. 检查 action 在 core.py 的 run() 里有没有对应分支
+  3. 检查 core.py 是否返回 dict，而不是 print
+- 模块没热重载？
+  改 core.py 后**下次调用**自动重载，但模块级状态会保留。如果要彻底重置，去「控制台 → 调度」终止实例再打开。
+- 端口被占用？
+  teardown() 没释放。检查 teardown 是否真的关闭 server / 线程，且端口立即 free。
+
+## 十五、常见反例（不要这样写）
+
+❌ 界面里写死颜色：body { background: #fff; color: #000; }
+✅ 用 CSS 变量：body { background: var(--color-bg); color: var(--color-text); }
+
+❌ 自己弹文件对话框：<input type="file">
+✅ 走中枢文件通道：postMessage({type:"ichen:pick-file", ...})
+
+❌ 在 core.py 顶层写：DB = sqlite3.connect(APP_DATA_DIR + "/x.db")
+✅ 在函数内：def run(params): from pathlib import Path; db = Path(APP_DATA_DIR) / "x.db"
+
+❌ 界面访问别的 App：fetch("/apps/other_app/x.json")
+✅ App 之间隔离，需要共享数据用 shared/GYun
+
+❌ 主题切换不重渲染：收到 ichen:theme 后什么都不做
+✅ 必做：document.documentElement.dataset.theme = m.theme;`;

@@ -69,11 +69,11 @@ class ShellAssetsTest(unittest.TestCase):
             self.assertTrue((SHELL / rel).is_file(), f"引用的资源不存在: {rel}")
 
     def test_console_has_backend_entry(self):
-        """控制台应含「后台」条目。"""
+        """控制台应含「调度」条目。"""
         html = (SHELL / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="processes-view"', html)
         js = (SHELL / "js" / "shell.js").read_text(encoding="utf-8")
-        self.assertIn("name: '后台'", js)
+        self.assertIn("name: '调度'", js)
 
     def test_all_js_brackets_balanced(self):
         js_dir = SHELL / "js"
