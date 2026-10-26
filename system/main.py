@@ -53,17 +53,17 @@ def parse_flags(argv) -> dict:
 def read_persisted_frameless() -> bool:
     """读取设置页持久化的「无边框窗口」开关（data/local_config.json）。
 
-    只有显式为 true 才开启——缺项 / 为 false / 文件损坏一律按关闭处理，
-    避免把用户显式关闭覆盖成默认开启。
+    v3.3.3 起**默认开启**（自绘标题栏）：只有用户显式写 false 才退回
+    pywebview 原生标题栏；缺项 / 文件损坏一律按开启处理。
     """
     try:
         import json
         from system.kernel.settings_mixin import CONFIG_FILE
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return isinstance(data, dict) and data.get("frameless") is True
+        return not (isinstance(data, dict) and data.get("frameless") is False)
     except Exception:
-        return False
+        return True
 
 
 def build_restart_argv(argv) -> list:
@@ -216,6 +216,13 @@ def main():
         window.evaluate_js(
             "window.__ICHEN_FRAMELESS__ = " + ("true;" if frameless else "false;")
         )
+        # 默认大窗口：启动即最大化到工作区（避开任务栏，frameless 下不能用
+        # 系统最大化——那会盖住任务栏）。--tray 启动时窗口隐藏，跳过。
+        if not start_hidden:
+            try:
+                api.window_toggle_maximize()
+            except Exception as e:
+                print(f"[iChen] 启动最大化失败（忽略）: {e}")
 
     # 调试：默认关闭；需要时用命令行 --debug 打开（WebView2 开了才允许 F12 / 右键检查）。
     # 窗口控制栏：默认用 pywebview 原生；frameless（命令行或设置开关）才启用自绘标题栏

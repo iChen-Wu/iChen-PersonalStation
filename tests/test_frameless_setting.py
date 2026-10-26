@@ -1,8 +1,8 @@
 """设置页「无边框窗口」开关的启动门禁与重启参数检查。
 
 真实缺陷防线：
-- 持久化开关只有显式 true 才开启，缺项/false/损坏文件一律按关闭处理
-  （布尔开关不能用 ``or 默认值``，否则用户显式关闭会被覆盖成开启）。
+- v3.3.3 起自绘标题栏**默认开启**：只有显式 false 才退回原生标题栏，
+  缺项 / 损坏文件一律按开启处理（用户显式关闭必须被尊重）。
 - 重启命令必须剥掉 --frameless：否则「设置里关掉 + 重启」会被旧命令行
   再次强制打开；其它参数（--debug）要原样透传。
 """
@@ -28,8 +28,8 @@ class PersistedFramelessTest(unittest.TestCase):
     def _write(self, data):
         settings_mixin.CONFIG_FILE.write_text(json.dumps(data), encoding="utf-8")
 
-    def test_missing_file_is_off(self):
-        self.assertFalse(m.read_persisted_frameless())
+    def test_missing_file_defaults_on(self):
+        self.assertTrue(m.read_persisted_frameless())
 
     def test_explicit_true_is_on(self):
         self._write({"frameless": True, "theme": "light"})
@@ -39,13 +39,13 @@ class PersistedFramelessTest(unittest.TestCase):
         self._write({"frameless": False})
         self.assertFalse(m.read_persisted_frameless())
 
-    def test_corrupt_file_is_off(self):
+    def test_corrupt_file_defaults_on(self):
         settings_mixin.CONFIG_FILE.write_text("{broken", encoding="utf-8")
-        self.assertFalse(m.read_persisted_frameless())
+        self.assertTrue(m.read_persisted_frameless())
 
-    def test_unrelated_keys_is_off(self):
+    def test_unrelated_keys_defaults_on(self):
         self._write({"theme": "dark", "tabbar_position": "left"})
-        self.assertFalse(m.read_persisted_frameless())
+        self.assertTrue(m.read_persisted_frameless())
 
 
 class BuildRestartArgvTest(unittest.TestCase):

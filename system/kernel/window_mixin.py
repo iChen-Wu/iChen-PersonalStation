@@ -28,6 +28,42 @@ class WindowMixin:
     def _is_maximized(self, value: bool) -> None:
         self._maximized = bool(value)
 
+    @property
+    def _is_fullscreen(self) -> bool:
+        return bool(getattr(self, "_fullscreen", False))
+
+    @_is_fullscreen.setter
+    def _is_fullscreen(self, value: bool) -> None:
+        self._fullscreen = bool(value)
+
+    # ==================== 全屏切换（覆盖任务栏） ====================
+    def window_toggle_fullscreen(self) -> Dict[str, Any]:
+        """真全屏切换：铺满整块屏幕（盖住任务栏），供标题栏中间按钮调用。
+
+        与「最大化」（工作区、保留任务栏）是两档不同状态；退出全屏后
+        pywebview 会恢复进入前的矩形（通常仍是工作区最大化）。
+        """
+        if not self._window:
+            return {"ok": False, "error": "窗口未就绪"}
+        try:
+            self._window.toggle_fullscreen()
+            self._is_fullscreen = not self._is_fullscreen
+            self._push_fullscreen_state()
+            return {"ok": True, "fullscreen": self._is_fullscreen}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _push_fullscreen_state(self) -> None:
+        """把全屏状态推给标题栏（切换 全屏/退出全屏 图标）。"""
+        try:
+            push = getattr(self, "_push_js", None)
+            if not callable(push):
+                return
+            flag = "true" if self._is_fullscreen else "false"
+            push(f"if(window.iChen&&iChen.Titlebar)iChen.Titlebar.setFullscreen({flag});")
+        except Exception as e:
+            print(f"[iChen] 推送全屏状态失败: {e}")
+
     def get_window_mode(self) -> Dict[str, Any]:
         """窗口模式：frameless 与否。
 
@@ -216,10 +252,11 @@ class WindowMixin:
             return {"ok": False, "error": str(e)}
 
     def window_state(self) -> Dict[str, Any]:
-        """窗口状态（供标题栏初始化最大化/还原图标）。"""
+        """窗口状态（供标题栏初始化 最大化/还原、全屏/退出全屏 图标）。"""
         if not self._window:
             return {"ok": False, "error": "窗口未就绪"}
         return {
             "ok": True,
             "maximized": self._is_maximized,
+            "fullscreen": self._is_fullscreen,
         }

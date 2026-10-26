@@ -12,7 +12,7 @@
 </head>
 <body>
 
-    <!-- 自绘标题栏（仅 python -m system.main --frameless 时显示；否则用 pywebview 原生） -->
+    <!-- 自绘标题栏（默认启用；设置页可切回 pywebview 原生标题栏，重启生效） -->
     <div class="titlebar" id="titlebar" hidden>
         <!-- pywebview-drag-region：pywebview 原生拖动区（仅此条可拖动，easy_drag=False） -->
         <div class="titlebar-drag pywebview-drag-region" id="titlebar-drag">
@@ -22,13 +22,16 @@
             <button class="titlebar-btn" id="tb-min" title="最小化">
                 <svg viewBox="0 0 24 24" width="16" height="16"><line x1="6" y1="12" x2="18" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
-            <button class="titlebar-btn" id="tb-max" title="最大化">
-                <!-- 最大化态图标（默认显示） -->
-                <svg class="tb-icon-max" viewBox="0 0 24 24" width="16" height="16"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                <!-- 还原态图标（最大化后显示） -->
-                <svg class="tb-icon-restore" viewBox="0 0 24 24" width="16" height="16" hidden>
-                    <rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
-                    <path d="M5 15V6a1 1 0 0 1 1-1h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <button class="titlebar-btn" id="tb-max" title="全屏">
+                <!-- 进入全屏图标（四角向外，默认显示） -->
+                <svg class="tb-icon-max" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/>
+                    <path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/>
+                </svg>
+                <!-- 退出全屏图标（四角向内，全屏后显示） -->
+                <svg class="tb-icon-restore" viewBox="0 0 24 24" width="16" height="16" hidden fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M9 4v4a1 1 0 0 1-1 1H4"/><path d="M15 4v4a1 1 0 0 0 1 1h4"/>
+                    <path d="M9 20v-4a1 1 0 0 0-1-1H4"/><path d="M15 20v-4a1 1 0 0 1 1-1h4"/>
                 </svg>
             </button>
             <button class="titlebar-btn titlebar-close" id="tb-close" title="关闭">
@@ -194,7 +197,7 @@
                             <div class="settings-row" style="margin-top:14px;border:0;">
                                 <span class="settings-label">
                                     无边框窗口
-                                    <span class="settings-hint">自绘标题栏（拖动 / 最小化 / 最大化），重启后生效</span>
+                                    <span class="settings-hint">自绘标题栏（默认开启；关闭则用系统原生标题栏），重启后生效</span>
                                 </span>
                                 <button class="toggle-btn" id="frameless-switch" role="switch"
                                         aria-checked="false" aria-label="无边框窗口">

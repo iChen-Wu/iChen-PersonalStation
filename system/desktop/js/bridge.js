@@ -282,6 +282,13 @@
             return { ok: false, error: '未连接 pywebview 桥' };
         },
 
+        /** 真全屏切换（覆盖任务栏），标题栏中间按钮调用 */
+        async windowToggleFullscreen() {
+            const api = getRealApi();
+            if (api && api.window_toggle_fullscreen) return api.window_toggle_fullscreen();
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         async windowClose() {
             const api = getRealApi();
             if (api) return api.window_close();

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ichen-project"
-version = "3.3.2"
+version = "3.3.3"
 description = "iChen Integrated Services - 数据中枢 · 传输中枢 · 自动化中枢 · 智能体中枢"
 authors = [{name = "Your Name", email = "you@example.com"}]
 readme = "README.md"
