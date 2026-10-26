@@ -179,19 +179,28 @@
     }
 
     /* ---------- 舞台布局（调度式多窗口） ---------- */
-    /** 重排舞台：按 stageIds 顺序并排呈现（多窗口时缝可拖宽）；空则显示占位卡 */
+    /** 重排舞台：按 stageIds 顺序并排呈现（多窗口时缝可拖宽）；空则显示占位卡。
+     *  注意：这里**绝不能移动卡片节点**（不要再 appendChild 已有卡片）——
+     *  重新挂载 iframe 会让浏览器重载 iframe 文档，App 会被动重启。
+     *  顺序改用 CSS order 表达：卡片 order = 序号×2，缝 order = 序号×2-1。 */
     function layoutStage() {
-        stage().querySelectorAll('.appcard-divider').forEach((d) => d.remove());
+        const st = stage();
+        st.querySelectorAll('.appcard-divider').forEach((d) => d.remove());
         // 舞台列表对齐真实实例（实例被终止后会出现在这里）
         stageIds = stageIds.filter((id) => instances.has(id));
 
-        instances.forEach((x) => { x.card.style.display = 'none'; });
-        // 关键：按 stageIds 顺序把卡片重新挂回 DOM，否则「先开 A 再开 B，收起 A 再点开 A」
-        // 会出现 stageIds=[B,A] 但 DOM 仍是 [A卡,B卡] 的顺序错乱，缝和 flex 都对不上
+        instances.forEach((x) => {
+            x.card.style.display = 'none';
+            x.card.style.order = '';
+        });
         stageIds.forEach((id, i) => {
             const inst = instances.get(id);
-            if (i > 0) stage().appendChild(makeDivider());
-            stage().appendChild(inst.card);
+            if (i > 0) {
+                const d = makeDivider();
+                d.style.order = String(i * 2 - 1);
+                st.appendChild(d); // 缝是新元素，每次重建，移动它不会触发 iframe 重载
+            }
+            inst.card.style.order = String(i * 2);
             inst.card.style.display = 'flex';
             inst.card.style.flexGrow = inst.grow;
         });
@@ -205,7 +214,12 @@
         const d = document.createElement('div');
         d.className = 'appcard-divider';
         d.addEventListener('mousedown', (e) => {
-            const left = d.previousElementSibling, right = d.nextElementSibling;
+            // 卡片按 CSS order 排序，DOM 兄弟顺序不代表视觉左右，故按 order 找邻居
+            const ord = Number(d.style.order);
+            const cards = Array.from(stage().querySelectorAll('.appcard'))
+                .filter((c) => c.style.display !== 'none');
+            const left = cards.find((c) => Number(c.style.order) === ord - 1);
+            const right = cards.find((c) => Number(c.style.order) === ord + 1);
             if (!left || !right || !left.classList.contains('appcard') || !right.classList.contains('appcard')) return;
             e.preventDefault();
             d.classList.add('on');
