@@ -105,6 +105,56 @@
             return { ok: false, error: '未连接 pywebview 桥' };
         },
 
+        /* ---------- 通知 / 诊断 / 离线更新（v3.3.0 新增） ---------- */
+        /** 发通知：应用内 toast + 控制台历史 + Windows 气球（best-effort） */
+        async notify(title, body, level, source) {
+            const api = getRealApi();
+            if (api && api.notify) return api.notify(title || '', body || '', level || 'info', source || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 读取最近 N 行运行日志（data/logs/ichen.log） */
+        async getRecentLogs(lines) {
+            const api = getRealApi();
+            if (api && api.get_recent_logs) return api.get_recent_logs(lines || 200);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 在资源管理器里打开日志目录 */
+        async openLogFolder() {
+            const api = getRealApi();
+            if (api && api.open_log_folder) return api.open_log_folder();
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 一键导出诊断包 zip（版本 / 平台 / 配置 / 日志 / App 清单） */
+        async exportDiagnostics(targetPath) {
+            const api = getRealApi();
+            if (api && api.export_diagnostics) return api.export_diagnostics(targetPath || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 校验离线更新包（zip / iChen 文件夹）：只比对版本，不改任何文件 */
+        async checkUpdatePackage(path) {
+            const api = getRealApi();
+            if (api && api.check_update_package) return api.check_update_package(path);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 应用离线更新：暂存 → 备份 → updater.bat 接管 → 中枢自动退出重启 */
+        async applyUpdatePackage(path) {
+            const api = getRealApi();
+            if (api && api.apply_update_package) return api.apply_update_package(path);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** App 自我更新占位接口（实现将在后续版本提供） */
+        async updateApp(appId, packagePath) {
+            const api = getRealApi();
+            if (api && api.update_app) return api.update_app(appId, packagePath || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         async importMiniapp(zipPath, parentDir, conflict) {
             const api = getRealApi();
             if (api && api.import_miniapp) return api.import_miniapp(zipPath, parentDir || '', conflict || '');

@@ -12,7 +12,7 @@ pywebview.js_api 暴露给前端的接口由各功能 Mixin 提供（见 `system
 import asyncio
 import threading
 
-APP_VERSION = "v3.3.1"
+APP_VERSION = "v3.3.2"
 
 
 class BaseApi:
