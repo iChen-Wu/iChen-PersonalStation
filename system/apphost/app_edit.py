@@ -131,6 +131,51 @@ class AppEditMixin:
             return {"ok": False, "error": f"写入失败: {e}"}
         return {"ok": True, "meta": cur}
 
+    def reorder_nodes(self, parent_dir: str, ordered_paths: List[str]) -> Dict[str, Any]:
+        """按界面顺序重排同一父目录下的 App 与文件夹。
+
+        ordered_paths 为该父目录下**全部**直接子项的完整顺序（每项是相对 apps/ 的路径）。
+        校验通过后把 order 写成 1..N（App 写 manifest.json，文件夹写 folder.json，
+        普通文件夹补建 folder.json）——`_sort_key` 会据此排序。
+        """
+        parent = _safe_under_apps(parent_dir)
+        if parent is None or not parent.is_dir():
+            return {"ok": False, "error": f"父目录不存在: {parent_dir}"}
+        if not isinstance(ordered_paths, list) or not ordered_paths:
+            return {"ok": False, "error": "排序列表不能为空"}
+        dirs: List[Path] = []
+        for raw in ordered_paths:
+            rel = str(raw or "").replace("\\", "/").strip("/")
+            d = _safe_under_apps(rel)
+            if d is None or not d.is_dir() or d.parent != parent:
+                return {"ok": False, "error": f"节点不在该目录下: {raw}"}
+            dirs.append(d)
+        given = [d.name for d in dirs]
+        if len(set(given)) != len(given):
+            return {"ok": False, "error": "排序列表里有重复节点"}
+        # 与 apps._scan_dir 的可见性保持一致：隐藏目录 / __pycache__ 不参与排序
+        actual = {p.name for p in parent.iterdir()
+                  if p.is_dir() and p.name != "__pycache__" and not p.name.startswith(".")}
+        if set(given) != actual:
+            return {"ok": False, "error": "排序列表与当前目录子项不一致（可能有新增/删除），请刷新后重试"}
+        try:
+            for i, d in enumerate(dirs):
+                order = i + 1
+                mf, fj = d / "manifest.json", d / "folder.json"
+                if mf.is_file():
+                    meta = _read_json(mf)
+                    meta["order"] = order
+                    _write_json(mf, meta)
+                elif fj.is_file():
+                    info = _read_json(fj)
+                    info["order"] = order
+                    _write_json(fj, info)
+                else:
+                    _write_json(fj, {"name": d.name, "order": order})
+        except OSError as e:
+            return {"ok": False, "error": f"写入排序失败: {e}"}
+        return {"ok": True, "count": len(dirs)}
+
     def set_app_icon(self, app_id: str, src_file: str) -> Dict[str, Any]:
         """把选中的图片复制进 App 目录并设为 manifest 的 icon。"""
         d = _node_dir(app_id)

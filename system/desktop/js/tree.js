@@ -37,7 +37,7 @@
         return img;
     }
 
-    function folderRow(node, open) {
+    function folderRow(node, open, siblings, parentPath) {
         const row = document.createElement('div');
         row.className = 'trow trow-folder' + (open ? ' open' : '');
         row.dataset.kind = 'folder';
@@ -45,6 +45,8 @@
         row.setAttribute('aria-expanded', open ? 'true' : 'false');
         row.dataset.path = node.path || '';
         row._node = node;
+        row._siblings = siblings || [];
+        row._parentPath = parentPath || '';
         const arrow = document.createElement('span');
         arrow.className = 'fold-arrow';
         arrow.innerHTML = ARROW_SVG;
@@ -57,12 +59,14 @@
         return row;
     }
 
-    function appRow(node) {
+    function appRow(node, siblings, parentPath) {
         const row = document.createElement('div');
         row.className = 'trow trow-app';
         row.dataset.kind = 'app';
         row.dataset.appId = node.id || '';
         row._node = node; // 供点击时把完整节点交给 AppFrame
+        row._siblings = siblings || [];
+        row._parentPath = parentPath || '';
         const spacer = document.createElement('span');
         spacer.className = 'spacer-arrow';
         const name = document.createElement('span');
@@ -79,22 +83,23 @@
     }
 
     /* ---------- 递归渲染 ---------- */
-    function renderList(container, nodes) {
+    // parentPath：本层节点所属父目录（相对 apps/）；与 nodes 一起交给右键菜单做同层排序
+    function renderList(container, nodes, parentPath) {
         nodes.forEach((node) => {
             if (node.type === 'folder') {
                 const key = node.path || node.name;
                 const open = !collapsedFolders.has(key);
                 const box = document.createElement('div');
-                box.appendChild(folderRow(node, open));
+                box.appendChild(folderRow(node, open, nodes, parentPath));
                 const childBox = document.createElement('div');
                 childBox.className = 'trow-children';
                 // 收起状态不仅恢复箭头（.open），子盒也要同步隐藏——否则重渲染后子项又全部露出
                 if (!open) childBox.style.display = 'none';
-                renderList(childBox, node.children || []);
+                renderList(childBox, node.children || [], node.path);
                 box.appendChild(childBox);
                 container.appendChild(box);
             } else if (node.type === 'app') {
-                container.appendChild(appRow(node));
+                container.appendChild(appRow(node, nodes, parentPath));
             }
         });
     }
@@ -118,7 +123,7 @@
         emptyEl.innerHTML = hasApp ? '' : (currentZoneName || currentZone || '该分区')
             + '暂无 App。<br>往 apps/' + (currentZone ? currentZone + '/' : '')
             + ' 放一个含 manifest.json 的文件夹即会出现；此列表只镜像目录，无预置内容。';
-        renderList(root, tree || []);
+        renderList(root, tree || [], currentZone || '');
         // 淡入只在「真正切换分区」时播放；折叠后再展开（同分区）不重放，避免观感干扰
         if (animate !== false && iChen.UI) iChen.UI.animateIn(root);
         syncActiveHighlight(); // 重渲染后按当前前台实例恢复高亮
@@ -192,10 +197,13 @@
             const app = appRow._node;
             const afterChange = () => { if (iChen.Shell) iChen.Shell.reload(); };
             const a = iChen.AppMgmt.makeAppActions(app, afterChange);
+            const move = iChen.AppMgmt.makeMove(appRow._siblings, app, appRow._parentPath, afterChange);
             iChen.UI.showContextMenu([
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
+                { label: '上移', action: move.up },
+                { label: '下移', action: move.down },
                 { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '删除', action: a.uninstall, danger: true },
             ], e.clientX, e.clientY, appRow);
@@ -214,13 +222,8 @@
                 if (iChen.UI) iChen.UI.showToast(r && r.ok ? '已改名：' + v.trim() : ('改名失败：' + (r && r.error)));
                 if (r && r.ok) afterChange();
             };
-            const setIcon = async () => {
-                const picked = await iChen.PyAPI.pickFiles('open', false, 'svg', '');
-                if (!picked || !picked.ok || !(picked.paths || []).length) return;
-                const r = await iChen.PyAPI.setFolderIcon(node.path, picked.paths[0]);
-                if (iChen.UI) iChen.UI.showToast(r && r.ok ? '已更新图标' : ('图标更新失败：' + (r && r.error)));
-                if (r && r.ok) afterChange();
-            };
+            const setIcon = () => iChen.AppMgmt.applyFolderIcon(node, afterChange);
+            const move = iChen.AppMgmt.makeMove(folderRow._siblings, node, folderRow._parentPath, afterChange);
             iChen.UI.showContextMenu([
                 {
                     label: '新建 App',
@@ -235,6 +238,8 @@
                 { label: '新建文件夹', action: () => iChen.AppMgmt.newFolder(node.path) },
                 { label: '重命名', action: rename },
                 { label: '修改图标', action: setIcon },
+                { label: '上移', action: move.up },
+                { label: '下移', action: move.down },
                 { label: '删除文件夹', danger: true, action: () => iChen.AppMgmt.deleteFolder(node, false, afterChange) },
             ], e.clientX, e.clientY, folderRow);
             return;

@@ -12,11 +12,20 @@ body {
     overflow: hidden;
     font-family: var(--font-family);
     color: var(--color-text);
-    background: var(--color-bg);
+    /* 主题壁纸（由 settings.js 写入 --wp-color / --wp-image）：
+       未设置时退回 --layer-base（主题色），保持原有同质底观感。
+       fixed + cover 让所有铺底元素（body / .stage）严格对齐。 */
+    background-color: var(--wp-color, var(--layer-base));
+    background-image: var(--wp-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
 }
 
 /* 底层统一色：除 App 卡片外的所有区域（Tab 栏 / 列表 / 舞台底缝 / 自绘标题栏）
-   都是同一种底色，形成「App 卡片浮在一片同质底上」的遮蔽关系。 */
+   都是同一种底色，形成「App 卡片浮在一片同质底上」的遮蔽关系。
+   底色由 body 铺（可为主题壁纸），这些元素保持透明以透出壁纸。 */
 :root {
     --layer-base: #eef0f4;          /* 浅色：比 #edf2fa 更淡、少一点蓝 */
     --card-solid: #ffffff;          /* App 卡片/面板：实心不透明，避免列表透过来 */
@@ -31,7 +40,7 @@ body {
 .shell {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column;
-    background: var(--layer-base);
+    background: transparent;   /* 透出 body 的主题壁纸 */
 }
 .shell.hidden { display: none; }
 
@@ -45,7 +54,7 @@ body {
     z-index: 3; /* 高于舞台：折叠时舞台向左覆盖列表，但不盖住 Tab 栏 */
     display: flex; flex-direction: column; align-items: stretch; gap: 6px;
     padding: 12px 6px;
-    background: var(--layer-base);
+    background: transparent;   /* 透出 body 的主题壁纸 */
 }
 .tabbar .tab {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
@@ -114,7 +123,7 @@ body {
     flex: 0 0 var(--lpw, clamp(170px, 17vw, 230px));
     position: relative;        /* 不设 z-index：让内部拖宽手柄的 z-index 能上浮到舞台之上 */
     display: flex; flex-direction: column; min-height: 0;
-    background: var(--layer-base);
+    background: transparent;   /* 透出 body 的主题壁纸 */
 }
 /* 折叠：列表原地不动，舞台向左平移把它盖住（层级遮蔽，列表文字留在底层） */
 .shell-row.collapsed .listpane {
@@ -208,9 +217,13 @@ html:not([data-tabbar="bottom"]) .shell-row.collapsed .stage {
     flex: 1; position: relative; z-index: 2; min-width: 0;
     display: flex;
     padding: 10px 10px 10px 0;
-    background: transparent;
-    /* 空白时可选背景：纯色 / 自定义图片，覆盖在底层之上、卡片之下 */
+    /* 自己铺同一张主题壁纸（fixed + cover，与 body 严格对齐）：
+       - 空白时卡片透明，露出的就是壁纸；
+       - 折叠时舞台向左覆盖列表，缝隙里也还是同一张壁纸，不露列表底色。 */
+    background-color: var(--wp-color, var(--layer-base));
+    background-image: var(--wp-image, none);
     background-size: cover; background-position: center; background-repeat: no-repeat;
+    background-attachment: fixed;
     transition: margin-left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -261,7 +274,8 @@ html:not([data-tabbar="bottom"]) .shell-row.collapsed .stage {
 }
 .stage-placeholder {
     position: absolute; top: 10px; right: 10px; bottom: 10px; left: 0;
-    background: var(--card-solid);   /* 默认卡片实色；设置里选了背景时被 JS 覆盖 */
+    /* 透明：只留边框与高光，让主题壁纸从空白前台透出来 */
+    background: transparent;
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     box-shadow: inset 0 0 0 1px var(--glass-highlight), var(--shadow-sm);
@@ -618,7 +632,7 @@ html:not([data-tabbar="bottom"]) .shell-row.collapsed .stage {
     align-items: center;
     height: 32px;
     flex: 0 0 32px;
-    background: var(--layer-base);   /* 与底层同色，作为窗口拖动区，不另起一层 */
+    background: transparent;   /* 透出 body 的主题壁纸（与下方主壳同一片底） */
     user-select: none;
 }
 
@@ -860,3 +874,40 @@ html[data-tabbar="bottom"] .tabbar .tab span {
 /* App 管理条目：操作按钮多，允许换行 */
 .app-manage-item { flex-wrap: wrap; gap: 6px; }
 .app-manage-item .ami-desc { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ============================================================
+   图标预设弹窗（新建 / 修改图标）
+   ============================================================ */
+.icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: 10px;
+    max-height: 320px; overflow-y: auto;
+    margin-top: 12px; padding: 4px;
+}
+.icon-cell {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 4px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.icon-cell:hover { border-color: var(--accent); background: var(--color-bg-hover); }
+.icon-cell img { width: 40px; height: 40px; display: block; }
+.icon-cell-name {
+    font-size: 11px; color: var(--color-text-muted);
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.icon-cell .icon-del {
+    position: absolute; top: -7px; right: -7px;
+    width: 20px; height: 20px; padding: 0;
+    border: 0; border-radius: 50%;
+    background: var(--danger); color: #fff;
+    font-size: 12px; line-height: 1; cursor: pointer;
+    display: none;
+}
+.icon-cell:hover .icon-del { display: block; }
+.icon-picker-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }

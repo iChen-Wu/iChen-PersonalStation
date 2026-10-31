@@ -221,6 +221,39 @@
             return { ok: false, error: '未连接 pywebview 桥' };
         },
 
+        /* ---------- 图标预设（新建 / 修改图标弹窗） ---------- */
+        async listIconPresets() {
+            const api = getRealApi();
+            if (api) return api.list_icon_presets();
+            return { ok: true, presets: [] };
+        },
+
+        async saveIconPreset(name, svg) {
+            const api = getRealApi();
+            if (api) return api.save_icon_preset(name || '', svg || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        async deleteIconPreset(presetId) {
+            const api = getRealApi();
+            if (api) return api.delete_icon_preset(presetId || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 应用预设图标：kind = 'app'（target = appId）或 'folder'（target = 相对路径） */
+        async applyIconPreset(kind, target, presetId) {
+            const api = getRealApi();
+            if (api) return api.apply_icon_preset(kind, target, presetId || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 同一父目录下重排 App / 文件夹（orderedPaths 为完整顺序，相对 apps/） */
+        async reorderNodes(parentDir, orderedPaths) {
+            const api = getRealApi();
+            if (api) return api.reorder_nodes(parentDir || '', orderedPaths || []);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         async deleteFolder(path, confirm) {
             const api = getRealApi();
             if (api) return api.delete_folder(path, !!confirm);

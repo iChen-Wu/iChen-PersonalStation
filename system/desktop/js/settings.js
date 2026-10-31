@@ -105,7 +105,9 @@
         applyAccent('custom');
     }
 
-    /* ---------- 空白舞台背景 ---------- */
+    /* ---------- 主题壁纸 ---------- */
+    // 壁纸属于主题层：铺在 body（Tab 栏 / 列表 / 标题栏都透明透出），
+    // 空白前台（stage-placeholder）也透明，因此空舞台看到的就是这层壁纸。
     const WALLPAPER_KEY = 'ichen-wallpaper';           // { mode: 'none'|'color'|'image', light, dark, image }
     let currentWallpaper = { mode: 'none', light: '#f5f6f8', dark: '#1d2025', image: '' };
 
@@ -129,19 +131,17 @@
             const p = $('wallpaper-path');
             if (p) p.textContent = currentWallpaper.image ? currentWallpaper.image.split(/[\\/]/).pop() : '未选择';
         }
-        // 背景写到「空白占位卡」上：只在没有窗口的那张圆角卡内显示，不影响外圈底层色
-        const ph = $('stage-placeholder');
-        if (ph) {
-            ph.style.removeProperty('background-image');
-            ph.style.removeProperty('background-color');
-            if (currentWallpaper.mode === 'color') {
-                ph.style.backgroundColor = isDarkResolved() ? currentWallpaper.dark : currentWallpaper.light;
-                ph.style.backgroundImage = 'none';
-            } else if (currentWallpaper.mode === 'image' && currentWallpaper.image) {
-                ph.style.backgroundImage = 'url("file:///' + currentWallpaper.image.replace(/\\/g, '/') + '")';
-                ph.style.backgroundSize = 'cover';
-                ph.style.backgroundPosition = 'center';
-            }
+        // 壁纸写到 documentElement 的 CSS 变量：body / .stage 统一铺同一张壁纸，
+        // 未设置时 CSS 侧回退到 --layer-base（主题色），空白前台透明即可透出。
+        const root = document.documentElement;
+        root.style.removeProperty('--wp-image');
+        root.style.removeProperty('--wp-color');
+        if (currentWallpaper.mode === 'color') {
+            root.style.setProperty('--wp-color',
+                isDarkResolved() ? currentWallpaper.dark : currentWallpaper.light);
+        } else if (currentWallpaper.mode === 'image' && currentWallpaper.image) {
+            root.style.setProperty('--wp-image',
+                'url("file:///' + currentWallpaper.image.replace(/\\/g, '/') + '")');
         }
         // 深浅模式切换时背景也要跟着换
         if (iChen.AppFrame && iChen.AppFrame.broadcastTheme) iChen.AppFrame.broadcastTheme();
@@ -379,7 +379,7 @@
     }
 
     /* ---------- init ---------- */
-    // 主题 / Tab 栏位置 / 舞台背景：优先读 data/local_config.json（跨设备保留），
+    // 主题 / Tab 栏位置 / 主题壁纸：优先读 data/local_config.json（跨设备保留），
     // 读不到再退回 localStorage（浏览器预览或首次启动）。
     function loadAndApplyConfig() {
         return iChen.PyAPI.getLocalConfig().then((c) => {
@@ -389,7 +389,7 @@
             if (cfg.accent) store(ACCENT_KEY, cfg.accent);
             if (cfg.accent_custom) store(ACCENT_CUSTOM_KEY, JSON.stringify(cfg.accent_custom));
             applyAccent(cfg.accent || load(ACCENT_KEY, 'default'));
-            // 舞台背景（空白/纯色/自定义图片）
+            // 主题壁纸（无/纯色/自定义图片）
             let wp = cfg.wallpaper;
             if (!wp) {
                 try { wp = JSON.parse(load(WALLPAPER_KEY, '')) || null; } catch (e) { wp = null; }

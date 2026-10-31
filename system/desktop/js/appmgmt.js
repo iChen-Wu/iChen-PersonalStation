@@ -31,10 +31,74 @@
         }
     }
 
-    async function pickIcon() {
+    /* ---------- 图标选择（预设弹窗优先，兜底直接选文件） ---------- */
+    async function chooseIcon(opts) {
+        if (iChen.IconPicker) return iChen.IconPicker.pick(opts || {});
         const picked = await iChen.PyAPI.pickFiles('open', false, 'svg', '');
         if (!picked || !picked.ok || !(picked.paths || []).length) return null;
-        return picked.paths[0];
+        return { kind: 'file', path: picked.paths[0] };
+    }
+
+    /** 把一次图标选择落到目标上：kind = 'app'（target=appId）/ 'folder'（target=相对路径） */
+    async function applyIconChoice(choice, kind, target) {
+        if (!choice || choice.kind === 'none') return { ok: true, skipped: true };
+        if (choice.kind === 'preset') {
+            return iChen.PyAPI.applyIconPreset(kind, target, choice.presetId);
+        }
+        if (choice.kind === 'file') {
+            return kind === 'app'
+                ? iChen.PyAPI.setAppIcon(target, choice.path)
+                : iChen.PyAPI.setFolderIcon(target, choice.path);
+        }
+        return { ok: false, error: '未知的图标选择' };
+    }
+
+    async function applyAppIcon(app, onChange) {
+        const choice = await chooseIcon({ title: '修改 App 图标' });
+        if (!choice) return;
+        const r = await applyIconChoice(choice, 'app', app.id);
+        toast(r && r.ok, '已更新图标', '图标更新失败', r);
+        if (r && r.ok) (onChange || afterChange)();
+    }
+
+    async function applyFolderIcon(node, onChange) {
+        const choice = await chooseIcon({ title: '修改文件夹图标' });
+        if (!choice) return;
+        const r = await applyIconChoice(choice, 'folder', node.path);
+        toast(r && r.ok, '已更新图标', '图标更新失败', r);
+        if (r && r.ok) (onChange || afterChange)();
+    }
+
+    /** 新建后套用图标选择（失败只提示，不回滚已创建的内容） */
+    async function applyNewIcon(choice, kind, target) {
+        if (!choice || choice.kind === 'none') return;
+        const r = await applyIconChoice(choice, kind, target);
+        if (!(r && r.ok)) toast(false, '', '图标设置失败', r);
+    }
+
+    /* ---------- 同父级排序（上移 / 下移） ---------- */
+    function makeMove(nodes, node, parentPath, onChange) {
+        const list = nodes || [];
+        const i = list.findIndex((n) => n.path === node.path);
+        const move = async (delta) => {
+            if (i < 0) return;
+            const j = i + delta;
+            if (j < 0 || j >= list.length) {
+                if (iChen.UI) iChen.UI.showToast(delta < 0 ? '已经在最前面' : '已经在最后面');
+                return;
+            }
+            const arr = list.map((n) => n.path);
+            arr.splice(i, 1);
+            arr.splice(j, 0, list[i].path);
+            const r = await iChen.PyAPI.reorderNodes(parentPath, arr);
+            if (r && r.ok) {
+                if (iChen.UI) iChen.UI.showToast('排序已更新');
+                (onChange || afterChange)();
+            } else {
+                toast(false, '', '排序失败', r);
+            }
+        };
+        return { up: () => move(-1), down: () => move(1) };
     }
 
     async function afterChange() {
@@ -99,7 +163,7 @@
     }
 
     /* ---------- 文件夹（分区 / 分类）行 ---------- */
-    function folderRow(node, depth) {
+    function folderRow(node, depth, siblings, parentPath) {
         const item = document.createElement('div');
         item.className = 'app-manage-item app-manage-folder';
         item.style.paddingLeft = (6 + depth * 18) + 'px';
@@ -139,15 +203,10 @@
             toast(r && r.ok, '已更新描述', '更新失败', r);
             if (r && r.ok) render();
         };
-        const setIcon = async () => {
-            const file = await pickIcon();
-            if (!file) return;
-            const r = await iChen.PyAPI.setFolderIcon(node.path, file);
-            toast(r && r.ok, '已更新图标', '图标更新失败', r);
-            if (r && r.ok) afterChange();
-        };
+        const setIcon = () => applyFolderIcon(node, afterChange);
+        const move = makeMove(siblings, node, parentPath, afterChange);
 
-        // 右键菜单：新建 / 重命名 / 描述 / 图标 / 删除
+        // 右键菜单：新建 / 重命名 / 描述 / 图标 / 排序 / 删除
         item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -166,6 +225,8 @@
                 { label: '重命名', action: rename },
                 { label: '修改描述', action: editDesc },
                 { label: '修改图标', action: setIcon },
+                { label: '上移', action: move.up },
+                { label: '下移', action: move.down },
                 { label: '删除文件夹', danger: true, action: () => deleteFolder(node, isZone) },
             ], e.clientX, e.clientY, item);
         });
@@ -182,13 +243,7 @@
                 toast(r && r.ok, ('已改名' + (r.warning ? '（' + r.warning + '）' : '')), '改名失败', r);
                 if (r && r.ok) afterChange();
             },
-            setIcon: async () => {
-                const file = await pickIcon();
-                if (!file) return;
-                const r = await iChen.PyAPI.setAppIcon(app.id, file);
-                toast(r && r.ok, '已更新图标', '图标更新失败', r);
-                if (r && r.ok) afterChange();
-            },
+            setIcon: () => applyAppIcon(app, afterChange),
             move: async () => {
                 const target = await pickFolder({ title: '移动到…' });
                 if (target == null) return;
@@ -220,7 +275,7 @@
     }
 
     /* ---------- App 行 ---------- */
-    function appRow(app, depth) {
+    function appRow(app, depth, siblings, parentPath) {
         const item = document.createElement('div');
         item.className = 'app-manage-item';
         item.style.paddingLeft = (6 + depth * 18) + 'px';
@@ -246,6 +301,8 @@
         addBtn(item, '打开目录', '在资源管理器中打开', a.openFolder);
         addBtn(item, '卸载', '删除该 App 的目录', a.uninstall, true);
 
+        const move = makeMove(siblings, app, parentPath, afterChange);
+
         // 右键菜单（与按钮同动作）
         item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -254,6 +311,8 @@
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
+                { label: '上移', action: move.up },
+                { label: '下移', action: move.down },
                 { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '打开目录', action: a.openFolder },
                 { label: '卸载', danger: true, action: a.uninstall },
@@ -262,13 +321,13 @@
         return item;
     }
 
-    function renderNodes(container, nodes, depth) {
+    function renderNodes(container, nodes, depth, parentPath) {
         (nodes || []).forEach((n) => {
             if (n.type === 'folder') {
-                container.appendChild(folderRow(n, depth));
-                if (n.children && n.children.length) renderNodes(container, n.children, depth + 1);
+                container.appendChild(folderRow(n, depth, nodes, parentPath));
+                if (n.children && n.children.length) renderNodes(container, n.children, depth + 1, n.path);
             } else if (n.type === 'app') {
-                container.appendChild(appRow(n, depth + 1));
+                container.appendChild(appRow(n, depth + 1, nodes, parentPath));
             }
         });
     }
@@ -293,7 +352,7 @@
             list.innerHTML = '<div class="app-manage-empty">apps/ 下暂无内容</div>';
             return;
         }
-        renderNodes(list, tree, 0);
+        renderNodes(list, tree, 0, '');
     }
 
     /** 文件夹选择器（点击导航式）：返回相对 apps/ 的路径，取消返回 null。
@@ -479,6 +538,8 @@
         const name = await iChen.Dialog.prompt('App 名称（同时作为目录名）', '新建 App', '');
         if (name == null || !name.trim()) return;
         const nameTrim = name.trim();
+        // 新建先选图标（预设弹窗；可「使用默认图标」，取消也按默认处理）
+        const choice = await chooseIcon({ title: '新建 App 的图标', allowDefault: true });
         if (type === 'importHtml') {
             const picked = await iChen.PyAPI.pickFiles('open', false, 'html', '');
             if (!picked || !picked.ok || !(picked.paths || []).length) {
@@ -489,7 +550,7 @@
             if (!f || !f.ok) { if (iChen.UI) iChen.UI.showToast('读取文件失败：' + (f && f.error)); return; }
             const r = await iChen.PyAPI.createAppFromHtml(parent, nameTrim, f.content);
             toast(r && r.ok, '已创建：' + (r.id || nameTrim), '创建失败', r);
-            if (r && r.ok) afterChange();
+            if (r && r.ok) { await applyNewIcon(choice, 'app', r.id); afterChange(); }
             return;
         }
         if (type === 'html') {
@@ -499,7 +560,7 @@
             if (html == null) return;
             const r = await iChen.PyAPI.createAppFromHtml(parent, nameTrim, html);
             toast(r && r.ok, '已创建：' + (r.id || nameTrim), '创建失败', r);
-            if (r && r.ok) afterChange();
+            if (r && r.ok) { await applyNewIcon(choice, 'app', r.id); afterChange(); }
             return;
         }
         if (type === 'url') {
@@ -507,7 +568,7 @@
             if (url == null || !url.trim()) return;
             const r = await iChen.PyAPI.createUrlApp(parent, nameTrim, url.trim());
             toast(r && r.ok, '已创建：' + (r.id || nameTrim), '创建失败', r);
-            if (r && r.ok) afterChange();
+            if (r && r.ok) { await applyNewIcon(choice, 'app', r.id); afterChange(); }
             return;
         }
     }
@@ -517,9 +578,10 @@
         if (parent == null) return;
         const name = await iChen.Dialog.prompt('分类名称', '新建分类', '');
         if (name == null || !name.trim()) return;
+        const choice = await chooseIcon({ title: '新建文件夹的图标', allowDefault: true });
         const r = await iChen.PyAPI.createFolder(parent, name.trim(), {});
         toast(r && r.ok, '已创建分类', '创建失败', r);
-        if (r && r.ok) afterChange();
+        if (r && r.ok) { await applyNewIcon(choice, 'folder', r.path); afterChange(); }
     }
 
     /** 「新建」菜单：新建App（4 种类型子菜单）+ 新建文件夹 */
@@ -543,6 +605,9 @@
         init() { bindCreators(); },
         render,
         makeAppActions,    // 供左侧列表 App 右键菜单复用
+        applyAppIcon,      // 图标预设弹窗 → App（左侧列表右键复用）
+        applyFolderIcon,   // 图标预设弹窗 → 文件夹（左侧列表右键复用）
+        makeMove,          // 同父级上移 / 下移（左侧列表右键复用）
         showNewMenu,       // 供 App 管理「新建」按钮 & 左侧空白处右键复用
         newApp,
         newFolder,

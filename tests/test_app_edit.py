@@ -182,6 +182,30 @@ class AppEditTest(unittest.TestCase):
         r = app_edit.AppEditMixin().set_folder_icon("work", str(f))
         self.assertFalse(r["ok"])
 
+    # ---------- 同层排序（App 与文件夹混合） ----------
+
+    def test_reorder_nodes_writes_order_for_apps_and_folders(self):
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "分类乙")
+        r = m.reorder_nodes("work", ["work/分类乙", "work/beta", "work/alpha"])
+        self.assertTrue(r["ok"], r)
+        expect = [("分类乙", "folder.json"), ("beta", "manifest.json"), ("alpha", "manifest.json")]
+        for i, (dir_name, meta_name) in enumerate(expect):
+            info = json.loads((self.root / "work" / dir_name / meta_name).read_text(encoding="utf-8"))
+            self.assertEqual(info["order"], i + 1)
+
+    def test_reorder_nodes_rejects_incomplete_list(self):
+        r = app_edit.AppEditMixin().reorder_nodes("work", ["work/alpha"])
+        self.assertFalse(r["ok"])
+        self.assertIn("不一致", r["error"])
+
+    def test_reorder_nodes_rejects_foreign_node(self):
+        (self.root / "space").mkdir()
+        _mk_app(self.root, "space/gamma", "g.gamma", "丙")
+        r = app_edit.AppEditMixin().reorder_nodes("work", ["space/gamma"])
+        self.assertFalse(r["ok"])
+        self.assertIn("不在该目录下", r["error"])
+
     # ---------- 越界防护 ----------
 
     def test_path_traversal_is_rejected(self):
