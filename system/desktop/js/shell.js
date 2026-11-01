@@ -163,6 +163,13 @@
                 e.stopPropagation();
                 if (iChen.Tree && iChen.Tree.showZoneMenu) iChen.Tree.showZoneMenu(z.key, z.name, e.clientX, e.clientY);
             });
+            // 拖拽：Tab 自身可拖动重排分区顺序；也作为「移动 App/文件夹到该分区」的落点
+            if (iChen.AppMgmt && iChen.AppMgmt.makeSortable) {
+                const axis = document.documentElement.getAttribute('data-tabbar') === 'bottom' ? 'x' : 'y';
+                const zoneNodes = (state.zones || []).map((x) => ({ path: x.key, name: x.name }));
+                iChen.AppMgmt.makeSortable(b, zoneNodes, { path: z.key, name: z.name }, '', () => { reload(); }, null, axis);
+                if (iChen.AppMgmt.makeMoveTarget) iChen.AppMgmt.makeMoveTarget(b, z, () => { reload(); });
+            }
             box.appendChild(b);
         });
     }

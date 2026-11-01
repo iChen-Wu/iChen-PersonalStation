@@ -101,46 +101,108 @@
         return { up: () => move(-1), down: () => move(1) };
     }
 
-    /* ---------- 拖拽排序（同父级）：拖动行时目标位置显示插入横线，松手落位 ----------
-       只认同一 parentPath 内的拖放（跨目录归「移动」动作管）；提交与 makeMove 同款：
-       整表路径交给 reorder_nodes 写 order=1..N。插入线宿主可单独指定——左侧树的
-       文件夹行把线画在整个折叠盒的底缘，而不是文件夹行自身的下缘（后者在展开时
-       看着像「插进文件夹内部」，语义不对）。 */
-    let dragCtx = null;   // { node, siblings, parentPath, row, onChange, target, after }
+    /* ---------- 拖拽排序 / 移动：拖动行时目标位置显示插入横线，松手落位 ----------
+       - 同一 parentPath 内：纯排序，整表路径交给 reorder_nodes 写 order=1..N；
+       - 拖出文件夹：目标行在「上一级」目录时放行，松手走 move_node（连移带落位，
+         两边目录的 order 都重写）；根目录（分区层）不接受拖出落位——跨分区移动
+         走 Tab 栏落点（见 makeMoveTarget）；
+       - 拖动时指针压到可滚动容器上/下缘（或越出范围），容器按纵坐标持续滚动。
+       插入线宿主可单独指定——左侧树的文件夹行把线画在整个折叠盒的底缘，
+       而不是文件夹行自身的下缘（后者在展开时看着像「插进文件夹内部」，语义不对）。 */
+    let dragCtx = null;   // { node, siblings, parentPath, isZone, row, onChange, target, after, targetSiblings, targetParent }
     let dropLine = null;
 
     function hideDropLine() {
         if (dropLine) { dropLine.remove(); dropLine = null; }
     }
 
+    /* 拖拽边缘自动滚动：dragover 持续上报指针位置，定时器按缘区距离滚动容器 */
+    const dragScroll = { timer: null, x: 0, y: 0 };
+    document.addEventListener('dragover', (e) => { dragScroll.x = e.clientX; dragScroll.y = e.clientY; }, true);
+
+    function startDragScroll() {
+        if (dragScroll.timer) return;
+        dragScroll.timer = setInterval(() => {
+            if (!dragCtx) { stopDragScroll(); return; }
+            const edge = 36;
+            document.querySelectorAll('.listpane-body, #zone-tabs, .appmgmt-view').forEach((el) => {
+                if (el.scrollHeight <= el.clientHeight) return;
+                const r = el.getBoundingClientRect();
+                if (dragScroll.x < r.left || dragScroll.x > r.right) return;
+                // 越出上缘为负、越出下缘为正，缘区内按距离加速，越出后封顶继续滚
+                let dy = 0;
+                if (dragScroll.y < r.top + edge) dy = dragScroll.y - (r.top + edge);
+                else if (dragScroll.y > r.bottom - edge) dy = dragScroll.y - (r.bottom - edge);
+                if (dy) el.scrollTop += Math.max(-16, Math.min(16, Math.round(dy / 3)));
+            });
+        }, 60);
+    }
+
+    function stopDragScroll() {
+        if (dragScroll.timer) { clearInterval(dragScroll.timer); dragScroll.timer = null; }
+    }
+
     function cleanupDrag() {
         hideDropLine();
+        stopDragScroll();
         if (dragCtx && dragCtx.row) dragCtx.row.classList.remove('drag-sort-source');
+        document.querySelectorAll('.drop-target').forEach((el) => el.classList.remove('drop-target'));
         dragCtx = null;
     }
 
+    function _parentOf(p) {
+        const i = (p || '').lastIndexOf('/');
+        return i < 0 ? '' : p.slice(0, i);
+    }
+
+    /* 落点是否放行：同一父级内重排；或「拖出文件夹」——目标行在上一级目录 */
+    function acceptDrop(pp) {
+        if (!dragCtx) return false;
+        if (dragCtx.parentPath === pp) return true;
+        return !dragCtx.isZone && pp !== '' && pp === _parentOf(dragCtx.parentPath);
+    }
+
     async function commitDrop(ctx) {
-        const list = (ctx.siblings || []).slice();
-        const from = list.findIndex((n) => n.path === ctx.node.path);
-        if (from < 0 || !ctx.target || ctx.target.path === ctx.node.path) return;
-        const before = list.map((n) => n.path).join('\n');
-        const moved = list.splice(from, 1)[0];
+        if (!ctx.target || ctx.target.path === ctx.node.path) return;
+        if ((ctx.targetParent || '') === (ctx.parentPath || '')) {
+            // 同父级：整表重排
+            const list = (ctx.siblings || []).slice();
+            const from = list.findIndex((n) => n.path === ctx.node.path);
+            if (from < 0) return;
+            const before = list.map((n) => n.path).join('\n');
+            const moved = list.splice(from, 1)[0];
+            let to = list.findIndex((n) => n.path === ctx.target.path);
+            if (to < 0) return;
+            if (ctx.after) to += 1;
+            list.splice(to, 0, moved);
+            if (list.map((n) => n.path).join('\n') === before) return; // 位置没变，不发请求
+            const r = await iChen.PyAPI.reorderNodes(ctx.parentPath, list.map((n) => n.path));
+            if (r && r.ok) {
+                if (iChen.UI) iChen.UI.showToast('排序已更新');
+                (ctx.onChange || afterChange)();
+            } else {
+                toast(false, '', '排序失败', r);
+            }
+            return;
+        }
+        // 跨级（拖出文件夹）：move_node 落位到目标父级；beforePath = 落点之后的那个兄弟
+        const list = (ctx.targetSiblings || []).slice();
         let to = list.findIndex((n) => n.path === ctx.target.path);
         if (to < 0) return;
         if (ctx.after) to += 1;
-        list.splice(to, 0, moved);
-        if (list.map((n) => n.path).join('\n') === before) return; // 位置没变，不发请求
-        const r = await iChen.PyAPI.reorderNodes(ctx.parentPath, list.map((n) => n.path));
+        const r = await iChen.PyAPI.moveNode(ctx.node.path, ctx.targetParent, list[to] ? list[to].path : null);
         if (r && r.ok) {
-            if (iChen.UI) iChen.UI.showToast('排序已更新');
+            if (iChen.UI) iChen.UI.showToast('已移动');
             (ctx.onChange || afterChange)();
         } else {
-            toast(false, '', '排序失败', r);
+            toast(false, '', '移动失败', r);
         }
     }
 
-    function makeSortable(row, siblings, node, parentPath, onChange, lineHost) {
+    function makeSortable(row, siblings, node, parentPath, onChange, lineHost, axis) {
         const host = lineHost || row;
+        const pp = parentPath || '';
+        const ax = axis === 'x' ? 'x' : 'y';   // 横向容器（底部 Tab 栏）传 'x'：插入线为竖线
         row.draggable = true;
         row.classList.add('drop-anchor');
         if (host !== row) host.classList.add('drop-anchor');
@@ -148,28 +210,35 @@
         row.querySelectorAll('img').forEach((im) => { im.draggable = false; });
         row.addEventListener('dragstart', (e) => {
             cleanupDrag();
-            dragCtx = { node, siblings: siblings || [], parentPath: parentPath || '', row, onChange };
+            dragCtx = { node, siblings: siblings || [], parentPath: pp, isZone: !pp, row, onChange };
             e.dataTransfer.effectAllowed = 'move';
             try { e.dataTransfer.setData('text/plain', node.path || ''); } catch (err) { /* 兜底：不允许 setData 也照常拖 */ }
+            startDragScroll();
             // 延迟半透明：先让浏览器按原样生成拖拽残影
             setTimeout(() => { if (dragCtx && dragCtx.row === row) row.classList.add('drag-sort-source'); }, 0);
         });
         row.addEventListener('dragover', (e) => {
-            if (!dragCtx || dragCtx.parentPath !== (parentPath || '') || dragCtx.node === node) return;
+            if (!acceptDrop(pp) || dragCtx.node === node) return;
             e.preventDefault(); // 只有 preventDefault 才允许 drop
             e.dataTransfer.dropEffect = 'move';
             const rect = row.getBoundingClientRect();
-            const after = (e.clientY - rect.top) > rect.height / 2;
+            const after = ax === 'x'
+                ? (e.clientX - rect.left) > rect.width / 2
+                : (e.clientY - rect.top) > rect.height / 2;
             dragCtx.target = node;
             dragCtx.after = after;
+            dragCtx.targetSiblings = siblings || [];
+            dragCtx.targetParent = pp;
             hideDropLine();
             const line = document.createElement('div');
-            line.className = 'drop-line ' + (after ? 'drop-line-bottom' : 'drop-line-top');
+            line.className = ax === 'x'
+                ? 'drop-line drop-line-x ' + (after ? 'drop-line-right' : 'drop-line-left')
+                : 'drop-line ' + (after ? 'drop-line-bottom' : 'drop-line-top');
             host.appendChild(line);
             dropLine = line;
         });
         row.addEventListener('drop', (e) => {
-            if (!dragCtx || dragCtx.parentPath !== (parentPath || '')) return;
+            if (!acceptDrop(pp) || dragCtx.node === node) return;
             e.preventDefault();
             e.stopPropagation();
             const ctx = dragCtx;
@@ -177,6 +246,35 @@
             commitDrop(ctx);
         });
         row.addEventListener('dragend', cleanupDrag);
+    }
+
+    /* 分区 Tab 作为「移动到该分区」的落点：整钮高亮，松手移到该分区末尾。
+       分区 Tab 自身被拖动（重排分区）时归 makeSortable 管，这里直接放行。 */
+    function makeMoveTarget(el, zone, onChange) {
+        const accept = () => dragCtx && !dragCtx.isZone && (dragCtx.parentPath || '') !== zone.key;
+        el.addEventListener('dragover', (e) => {
+            if (!accept()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            hideDropLine();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+        el.addEventListener('drop', async (e) => {
+            if (!accept()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const ctx = dragCtx;
+            cleanupDrag();
+            const r = await iChen.PyAPI.moveNode(ctx.node.path, zone.key, null);
+            if (r && r.ok) {
+                if (iChen.UI) iChen.UI.showToast('已移动到「' + (zone.name || zone.key) + '」');
+                (ctx.onChange || onChange || afterChange)();
+            } else {
+                toast(false, '', '移动失败', r);
+            }
+        });
     }
 
     async function afterChange() {
@@ -689,6 +787,7 @@
         applyFolderIcon,   // 图标预设弹窗 → 文件夹（左侧列表右键复用）
         makeMove,          // 同父级上移 / 下移（左侧列表右键复用）
         makeSortable,      // 拖拽排序：插入横线 + 松手落位（左侧列表行复用）
+        makeMoveTarget,    // 分区 Tab 作为「移动到该分区」的拖拽落点（shell.js 复用）
         showNewMenu,       // 供 App 管理「新建」按钮 & 左侧空白处右键复用
         newApp,
         newFolder,

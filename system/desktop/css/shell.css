@@ -928,4 +928,14 @@ html[data-tabbar="bottom"] .tabbar .tab span {
 }
 .drop-line-top { top: -1px; }
 .drop-line-bottom { bottom: -1px; }
+/* 横向容器（底部 Tab 栏）的插入线：竖线，贴目标左/右缘 */
+.drop-line-x { top: 4px; bottom: 4px; left: auto; right: auto; width: 2px; height: auto; }
+.drop-line-x.drop-line-left { left: -1px; }
+.drop-line-x.drop-line-right { right: -1px; }
+/* 分区 Tab 作为「移动到该分区」的拖拽落点：整钮描边高亮 */
+.tab.drop-target {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 6px var(--accent);
+    color: var(--accent);
+}
 .drag-sort-source { opacity: .45; }

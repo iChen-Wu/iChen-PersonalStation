@@ -254,6 +254,13 @@
             return { ok: false, error: '未连接 pywebview 桥' };
         },
 
+        /** 移动 App / 文件夹到另一个目录；beforePath = 目标目录里「插到它之前」的兄弟（null 排末尾） */
+        async moveNode(path, targetDir, beforePath) {
+            const api = getRealApi();
+            if (api) return api.move_node(path || '', targetDir || '', beforePath || null);
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         async deleteFolder(path, confirm) {
             const api = getRealApi();
             if (api) return api.delete_folder(path, !!confirm);

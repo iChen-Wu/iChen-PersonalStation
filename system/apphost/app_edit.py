@@ -72,6 +72,42 @@ def _node_dir(app_id: str) -> Optional[Path]:
     return _safe_under_apps(node.get("path", ""))
 
 
+def _visible_children(d: Path) -> List[Path]:
+    """与 apps._scan_dir 的可见性一致的直接子目录（排除隐藏目录 / __pycache__）。"""
+    try:
+        return [p for p in d.iterdir()
+                if p.is_dir() and p.name != "__pycache__" and not p.name.startswith(".")]
+    except OSError:
+        return []
+
+
+def _order_key(d: Path) -> tuple:
+    """与 apps._sort_key 同款的排序键（order 取自 manifest.json，其次 folder.json）。"""
+    order = _read_json(d / "manifest.json").get("order")
+    if order is None:
+        order = _read_json(d / "folder.json").get("order")
+    if isinstance(order, (int, float)):
+        return (0, float(order), d.name.casefold())
+    return (1, 0.0, d.name.casefold())
+
+
+def _write_order(dirs: List[Path]) -> None:
+    """把列表顺序写成 order=1..N（App→manifest.json，文件夹→folder.json，没有补建）。"""
+    for i, item in enumerate(dirs):
+        order = i + 1
+        mf, fj = item / "manifest.json", item / "folder.json"
+        if mf.is_file():
+            meta = _read_json(mf)
+            meta["order"] = order
+            _write_json(mf, meta)
+        elif fj.is_file():
+            info = _read_json(fj)
+            info["order"] = order
+            _write_json(fj, info)
+        else:
+            _write_json(fj, {"name": item.name, "order": order})
+
+
 class AppEditMixin:
     """App / 分区 / 分类 的编辑桥（组合进 Api）。"""
 
@@ -175,6 +211,43 @@ class AppEditMixin:
         except OSError as e:
             return {"ok": False, "error": f"写入排序失败: {e}"}
         return {"ok": True, "count": len(dirs)}
+
+    def move_node(self, path: str, target_dir: str, before_path: str = None) -> Dict[str, Any]:
+        """把 App / 文件夹移动到 apps/ 下的另一个目录（拖拽跨级落位用，App 与文件夹通吃）。
+
+        before_path 给出目标目录里「插到它之前」的兄弟节点（相对 apps/ 的路径）；
+        None 表示排到末尾。移动完成后目标目录与源目录的 order 都重写为 1..N。
+        """
+        src = _safe_under_apps(path)
+        if src is None or not src.is_dir():
+            return {"ok": False, "error": f"节点不存在: {path}"}
+        dst_dir = _safe_under_apps(target_dir)
+        if dst_dir is None or not dst_dir.is_dir():
+            return {"ok": False, "error": f"目标目录不存在: {target_dir}"}
+        if dst_dir == src.parent:
+            return {"ok": False, "error": "目标与当前位置相同"}
+        if dst_dir == src or src in dst_dir.parents:
+            return {"ok": False, "error": "不能移动到自己的子目录"}
+        target = dst_dir / src.name
+        if target.exists():
+            return {"ok": False, "error": f"目标已存在同名目录: {src.name}（请先改名）"}
+        before = None
+        if before_path:
+            before = _safe_under_apps(before_path)
+            if before is None or not before.is_dir() or before.parent != dst_dir:
+                return {"ok": False, "error": f"落位参照不在该目录下: {before_path}"}
+        old_parent = src.parent
+        try:
+            shutil.move(str(src), str(target))
+            siblings = sorted(_visible_children(dst_dir), key=_order_key)
+            siblings.remove(target)
+            idx = siblings.index(before) if before in siblings else len(siblings)
+            siblings.insert(idx, target)
+            _write_order(siblings)
+            _write_order(sorted(_visible_children(old_parent), key=_order_key))
+        except OSError as e:
+            return {"ok": False, "error": f"移动失败: {e}"}
+        return {"ok": True, "path": str(target.relative_to(APPS_ROOT.resolve()).as_posix())}
 
     def set_app_icon(self, app_id: str, src_file: str) -> Dict[str, Any]:
         """把选中的图片复制进 App 目录并设为 manifest 的 icon。"""

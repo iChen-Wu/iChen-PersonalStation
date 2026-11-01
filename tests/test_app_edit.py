@@ -206,6 +206,68 @@ class AppEditTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("不在该目录下", r["error"])
 
+    # ---------- 跨级移动（拖出文件夹，move_node） ----------
+
+    def test_move_node_drag_out_with_before_anchor(self):
+        """拖出文件夹并落位：移到上一级、插到 before_path 之前；两边目录 order 重写。"""
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "分类")
+        _mk_app(self.root, "work/分类/inner", "i.inner", "内")
+        _mk_app(self.root, "work/分类/inner2", "i.inner2", "内二")
+        r = m.move_node("work/分类/inner", "work", "work/beta")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["path"], "work/inner")
+        self.assertTrue((self.root / "work" / "inner" / "manifest.json").is_file())
+        self.assertFalse((self.root / "work" / "分类" / "inner").exists())
+        # 目标目录：插到 beta 之前 → alpha=1 inner=2 beta=3，分类（folder.json）排 4
+        expect = [("alpha", "manifest.json", 1), ("inner", "manifest.json", 2),
+                  ("beta", "manifest.json", 3), ("分类", "folder.json", 4)]
+        for dir_name, meta_name, order in expect:
+            info = json.loads((self.root / "work" / dir_name / meta_name).read_text(encoding="utf-8"))
+            self.assertEqual(info["order"], order)
+        # 源目录剩余成员的 order 也重写为 1
+        info = json.loads((self.root / "work" / "分类" / "inner2" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(info["order"], 1)
+
+    def test_move_node_append_to_end_when_no_before(self):
+        """before_path=None → 排到目标目录末尾。"""
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "分类")
+        _mk_app(self.root, "work/分类/inner", "i.inner", "内")
+        r = m.move_node("work/分类/inner", "work")
+        self.assertTrue(r["ok"], r)
+        info = json.loads((self.root / "work" / "inner" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(info["order"], 4)   # alpha beta 分类 之后
+
+    def test_move_node_rejects_same_dir_and_own_subdir(self):
+        m = app_edit.AppEditMixin()
+        self.assertFalse(m.move_node("work/alpha", "work")["ok"])          # 目标=当前目录
+        self.assertFalse(m.move_node("work", "work/alpha")["ok"])          # 移到自己的子目录
+        self.assertFalse(m.move_node("work/alpha", "work/alpha")["ok"])
+
+    def test_move_node_rejects_duplicate_name(self):
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "分类")
+        _mk_app(self.root, "work/分类/alpha", "x.alpha2", "甲二")
+        r = m.move_node("work/分类/alpha", "work")                          # 目标已有同名 alpha
+        self.assertFalse(r["ok"])
+        self.assertIn("同名", r["error"])
+        self.assertTrue((self.root / "work" / "分类" / "alpha").is_dir())  # 未动
+
+    def test_move_node_rejects_traversal(self):
+        m = app_edit.AppEditMixin()
+        self.assertFalse(m.move_node("work/alpha", "../outside")["ok"])
+        self.assertFalse(m.move_node("../x", "work")["ok"])
+
+    def test_move_node_rejects_bad_before_anchor(self):
+        """before_path 必须在目标目录下。"""
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "分类")
+        _mk_app(self.root, "work/分类/inner", "i.inner", "内")
+        r = m.move_node("work/分类/inner", "work", "work/分类/inner2")
+        self.assertFalse(r["ok"])
+        self.assertIn("落位参照", r["error"])
+
     # ---------- 越界防护 ----------
 
     def test_path_traversal_is_rejected(self):
