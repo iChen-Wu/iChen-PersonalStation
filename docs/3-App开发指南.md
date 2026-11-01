@@ -94,15 +94,18 @@ apps/
   CDN；不使用 `file://` 子资源。
 - **双模式**：浏览器直接打开时是「独立模式」，必须用内置兜底样式和演示数据正常渲染；被中枢挂载时
   收到握手消息进入「嵌入模式」，操作改走 postMessage。
-- 挂载方式：中枢读取 HTML 文本后用 iframe 的 srcdoc 挂载并注入 `<base>`，加载完成后向界面发消息。
+- 挂载方式：中枢读取 HTML 文本后用 iframe 的 srcdoc 挂载，注入 `<base>`，并把共享样式与当前主题
+  **直接拼进 head**（见第十二节）；加载完成后还会再发一次消息。
+- 改界面：中枢内置源码编辑（列表右键 App → 「编辑源码」），保存后运行中的实例自动重载；只允许
+  编辑 App 目录内的文本文件（html/css/js/json/py/md/txt/svg/xml）。
 - 图标一律使用 SVG 文件，不要用 emoji 或 Unicode 字符当图标。
 
 ### 5.1 消息协议
 
 界面接收（监听 window 的 message 事件，读 `e.data`）：
 
-- `{ type: "ichen:css", css: "<共享样式文本>", theme: "light|dark|system" }`：中枢注入的共享样式；
-  新建 `<style>` 追加到 head 即可。
+- `{ type: "ichen:css", css: "<共享样式文本>", theme: "light|dark|system" }`：中枢在挂载时已把同样
+  内容拼进 head，不必重复追加（追加也无害）。
 - `{ type: "ichen:bridge" }`：握手信号，收到后视为嵌入模式（srcdoc 挂载下不要只靠 window.parent 判断）。
 - `{ type: "ichen:theme", theme: "light|dark|system" }`：主题变化，必须设置
   `document.documentElement.dataset.theme = theme`；样式请用 CSS 变量并给浅色兜底。

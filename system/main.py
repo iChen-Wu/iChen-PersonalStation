@@ -184,7 +184,8 @@ def main():
         except Exception:
             pass
 
-    tray = TrayManager(tray_open, tray_quit, icon_path=icon_file)
+    tray = TrayManager(tray_open, tray_quit, icon_path=icon_file,
+                       on_restart=tray_restart)
     # 设置页「退出应用」= 真正终止进程（同托盘「退出」）；直接 destroy 会被 closing 拦截成隐藏
     api._quit_hook = tray_quit
     # 设置页「立即重启」（切换无边框窗口等需重启生效的设置）

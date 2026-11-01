@@ -438,6 +438,7 @@ html:not([data-tabbar="bottom"]) .shell-row.collapsed .stage {
     to   { opacity: 1; transform: none; }
 }
 .dlg-title { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+.dlg.dlg-wide { max-width: 880px; }
 .dlg-msg {
     font-size: 13px; color: var(--color-text-secondary);
     line-height: 1.6; white-space: pre-wrap; word-break: break-word;

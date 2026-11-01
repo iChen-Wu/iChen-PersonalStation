@@ -31,7 +31,7 @@
             <li><b>列表区</b>：当前分区里的分类与 App，点 App 即在右侧工作区打开；顶部标题可右键管理整个分区。</li>
             <li><b>保活</b>：切换 App 或分区不会关闭它，只有在「控制台 → 调度」里点「终止」才真正结束。</li>
             <li><b>右键菜单</b>：在列表里右键文件夹可新建 App / 文件夹、重命名、删除；在空白处右键可新建。</li>
-            <li><b>系统托盘</b>：关闭窗口只是收进托盘，进程和运行中的 App 继续运行；托盘菜单可「打开」或「退出」。</li>
+            <li><b>系统托盘</b>：关闭窗口只是收进托盘，进程和运行中的 App 继续运行；托盘菜单可「打开 / 重启 / 退出」。</li>
             <li><b>设置</b>：主题、Tab 栏位置、无边框窗口都在「控制台 → 设置」，部分设置重启后生效。</li>
         </ul>
     </div>
@@ -108,6 +108,25 @@
             （<code>--color-bg</code> / <code>--color-text</code> / <code>--accent</code> / <code>--radius-md</code> / <code>--shadow-sm</code>…）
             和组件类（<code>.btn</code> / <code>.btn-primary</code> / <code>.toast</code>…），深浅主题自动跟随。
             不要写死颜色值，也不要重复造同类组件样式。完整清单见下方规格原文第十二节。
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section-title">只写 HTML 的 App（不需要 core.py）</div>
+        <div class="welcome-text">
+            如果 App 只是「导入一段 HTML」（<code>type: "ui"</code>，没有 <code>core.py</code>、也不打算接桥协议），
+            同样能用中枢样式：挂载时中枢会<b>直接把共享样式拼进 <code>index.html</code> 的 head</b>，
+            并把当前主题写进 <code>&lt;html data-theme&gt;</code>。你不需要写任何监听代码，
+            就能直接用 <code>--color-bg</code> / <code>--color-text</code> / <code>--accent</code> 这些 CSS 变量，
+            以及 <code>.btn</code> / <code>.btn-primary</code> 等组件类。
+        </div>
+        <div class="welcome-note">
+            手动切换深浅主题时，自动注入的是<b>挂载那一刻</b>的主题。想让 HTML App 跟着实时切换，加这一小段即可（可选）：
+            <code>window.addEventListener('message', e =&gt; { if (e.data &amp;&amp; e.data.type === 'ichen:theme') document.documentElement.dataset.theme = e.data.theme; });</code>
+        </div>
+        <div class="welcome-note">
+            改界面不用另找编辑器：列表里右键 App → <b>编辑源码</b>（或行内「源码」按钮），直接改 <code>ui/index.html</code> 并保存；
+            正在运行的实例会自动重载，立刻看到效果。源码只限 App 目录内的文本文件（html/css/js/json/py/md/txt/svg/xml）。
         </div>
     </div>
 

@@ -541,6 +541,21 @@
                 if (r && r.ok) afterChange();
             },
             setIcon: () => applyAppIcon(app, afterChange),
+            source: async () => {
+                const r = await iChen.PyAPI.getAppSource(app.id);
+                if (!(r && r.ok)) { toast(false, '', '读取源码失败', r); return; }
+                const file = r.file || 'ui/index.html';
+                const next = await iChen.Dialog.textarea(
+                    '编辑 ' + file + '（保存后自动重载正在运行的实例）',
+                    '源码 · ' + (app.name || app.id), r.content || '');
+                if (next == null || next === (r.content || '')) return;
+                const s = await iChen.PyAPI.saveAppSource(app.id, file, next);
+                toast(s && s.ok, '源码已保存', '保存失败', s);
+                if (!(s && s.ok)) return;
+                const running = iChen.AppFrame && iChen.AppFrame.list
+                    ? iChen.AppFrame.list().some((x) => x.id === app.id) : false;
+                if (running) iChen.AppFrame.restart(app.id);
+            },
             move: async () => {
                 const target = await pickFolder({ title: '移动到…' });
                 if (target == null) return;
@@ -592,6 +607,7 @@
         item.appendChild(desc);
 
         const a = makeAppActions(app, afterChange);
+        addBtn(item, '源码', '直接编辑界面源码（ui/index.html），保存后自动重载实例', a.source);
         addBtn(item, '改名', '改显示名（并尽量连文件夹一起改）', a.rename);
         addBtn(item, '图标', '选择一个 SVG 文件作为 App 图标', a.setIcon);
         addBtn(item, '移动', '移到 apps/ 下的另一个分区或分类', a.move);
@@ -606,6 +622,7 @@
             e.preventDefault();
             e.stopPropagation();
             iChen.UI.showContextMenu([
+                { label: '编辑源码', action: a.source },
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },

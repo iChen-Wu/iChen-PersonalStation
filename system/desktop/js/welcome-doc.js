@@ -92,13 +92,14 @@ apps/
 
 - 完全自包含：CSS/JS 内联或相对本 App 目录引用；禁止引用中枢全局对象、其他 App 资源或外网 CDN；不使用 file:// 子资源。
 - 同一份文件支持两种模式：浏览器直接打开时是「独立模式」，必须用内置兜底样式和演示数据正常渲染；被中枢挂载时收到握手消息进入「嵌入模式」，操作改走 postMessage。
-- 挂载方式：中枢读取 HTML 文本后用 iframe 的 srcdoc 挂载并注入 <base>，加载完成后向界面发消息。
+- 挂载方式：中枢读取 HTML 文本后用 iframe 的 srcdoc 挂载，注入 <base>，并把共享样式与当前主题**直接拼进 head**（见第十二节）；加载完成后还会再发一次消息。
+- 改界面：中枢内置源码编辑（列表右键 App → 「编辑源码」，或行内「源码」按钮），保存后正在运行的实例自动重载。只允许编辑 App 目录内的文本文件（html/css/js/json/py/md/txt/svg/xml）。
 - 图标一律使用 SVG 文件，不要用 emoji 或 Unicode 字符当图标。
 
 ### 5.1 消息协议
 
 界面接收（监听 window 的 message 事件，读 e.data）：
-- { type: "ichen:css", css: "<共享样式文本>", theme: "light|dark|system" }：中枢注入的共享样式；新建 <style> 追加到 head 即可。
+- { type: "ichen:css", css: "<共享样式文本>", theme: "light|dark|system" }：中枢在挂载时已把同样内容直接拼进 head；再收到这条消息时**不必重复追加**（要追加也无害）。
 - { type: "ichen:bridge" }：握手信号，收到后视为嵌入模式（srcdoc 挂载下不要只靠 window.parent 判断）。
 - { type: "ichen:theme", theme: "light|dark|system" }：主题变化，必须设置 document.documentElement.dataset.theme = theme；样式请用 CSS 变量并给浅色兜底。
 - 业务回执：{ app: "<你的 id>", action: "<动作名>", ok: true, ...其它字段 }；失败时 ok: false 且带 error。
@@ -285,7 +286,9 @@ function pickFile() {
 
 ## 十二、中枢提供的共享样式（不要自己再造）
 
-中枢在 iframe 加载完成后会发 { type: "ichen:css", css, theme }，把 shared/common/css/tokens.css + components.css 的全部内容注入进来。你只需 new 一个 <style> 把 m.css 追加到 head 即可（见 5.2 模板）。
+中枢挂载界面时，会**直接把** shared/common/css/tokens.css + components.css 的全部内容拼进 ui/index.html 的 head（style id="ichen-shared-css"），并把当前主题写到 html 的 data-theme="light|dark"。同时，加载完成后仍会发 { type: "ichen:css", css, theme }（兼容老写法，重复追加无害）。
+
+也就是说：**你什么都不用接，只要用 CSS 变量和组件类，样式就已经在位**。
 
 提供给你的样式基座：
 
@@ -335,6 +338,22 @@ function pickFile() {
 - ❌ 写死 background: #fff / color: #000 → 改用 var(--color-bg) var(--color-text)
 - ❌ 引入自己的字体文件 → 用 var(--font-family)
 - ❌ 全局选择器 * / body 覆写中枢样式 → 你的样式作用域只在 iframe 内，但仍要避免
+
+### 12.4 纯 HTML App 的最小接法（不需要 core.py）
+
+如果 App 只是把现成的一段 HTML 放进来（manifest 的 type 写 "ui"，没有 core.py）：
+
+1. 目录只需要 manifest.json + icon.svg + ui/index.html；
+2. 界面里直接用上面的 CSS 变量和组件类即可——中枢挂载时会自动注入共享样式，不写任何 message 监听也有样式；
+3. 想让深浅主题实时跟随（用户手动切换时也变），只加这一行监听（可选）：
+
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'ichen:theme') document.documentElement.dataset.theme = e.data.theme;
+});
+
+4. 改界面不用离开中枢：列表里右键 App → 「编辑源码」，保存后正在运行的实例自动重载。
+
+纯 HTML App 没有 core.py，不要发业务消息（没人处理）；需要本地数据或后端逻辑时再升级成「逻辑型」。
 
 ## 十三、shared/ 与 common/ 模块速查
 

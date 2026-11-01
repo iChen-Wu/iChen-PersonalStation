@@ -481,6 +481,21 @@
 
             $('settings-quit').addEventListener('click', () => { iChen.PyAPI.quitApp(); });
 
+            // 重启应用：拉起新实例后再退出当前进程（退出失败时按钮复位）
+            const restartAppBtn = $('settings-restart');
+            if (restartAppBtn) restartAppBtn.addEventListener('click', () => {
+                restartAppBtn.disabled = true;
+                iChen.PyAPI.restartApp().then((r) => {
+                    if (r && r.status === 'error') {
+                        restartAppBtn.disabled = false;
+                        if (iChen.Notify) iChen.Notify.error('重启失败：' + (r.message || ''));
+                    }
+                }).catch((e) => {
+                    restartAppBtn.disabled = false;
+                    if (iChen.Notify) iChen.Notify.error('重启失败：' + e);
+                });
+            });
+
             // 最近通知
             if (iChen.Notify) {
                 iChen.Notify.onChange(renderNotify);

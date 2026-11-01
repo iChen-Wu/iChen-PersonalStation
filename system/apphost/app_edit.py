@@ -72,6 +72,26 @@ def _node_dir(app_id: str) -> Optional[Path]:
     return _safe_under_apps(node.get("path", ""))
 
 
+# 可在界面里直接编辑的源码扩展名（纯文本；二进制 / 可执行文件一律拒绝）
+_SOURCE_SUFFIXES = {".html", ".htm", ".css", ".js", ".json", ".py", ".md",
+                    ".txt", ".svg", ".xml", ".yml", ".yaml"}
+_SOURCE_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _source_file(app_dir: Path, rel_path: str) -> Optional[Path]:
+    """把「App 目录内的相对路径」解析成绝对路径；越界 / 绝对路径返回 None。"""
+    raw = str(rel_path or "").replace("\\", "/").strip("/")
+    if not raw or raw.startswith(".."):
+        return None
+    try:
+        target = (app_dir / raw).resolve()
+    except OSError:
+        return None
+    if target != app_dir and app_dir not in target.parents:
+        return None
+    return target
+
+
 def _visible_children(d: Path) -> List[Path]:
     """与 apps._scan_dir 的可见性一致的直接子目录（排除隐藏目录 / __pycache__）。"""
     try:
@@ -482,6 +502,60 @@ class AppEditMixin:
 
         walk(scan_apps_tree(APPS_ROOT).get("tree", []))
         return {"ok": True, "apps": out}
+
+    # ==================== 源码读写（HTML 导入型 App 可直接改界面） ====================
+    def get_app_source(self, app_id: str, rel_path: str = None) -> Dict[str, Any]:
+        """读取 App 目录内的一个源码文件（默认读 manifest 指定的 ui，即 ui/index.html）。
+
+        返回 {"ok": True, "file": <相对 App 目录，如 ui/index.html>,
+              "path": <相对 apps/>, "content": <文本>}
+        """
+        d = _node_dir(app_id)
+        if d is None:
+            return {"ok": False, "error": f"未找到 App: {app_id}"}
+        rel = str(rel_path or "").strip()
+        if not rel:
+            node = find_app_node(APPS_ROOT, app_id or "") or {}
+            rel = node.get("ui") or "ui/index.html"
+        p = _source_file(d, rel)
+        if p is None:
+            return {"ok": False, "error": "路径非法（必须是 App 目录内的相对路径）"}
+        if p.suffix.lower() not in _SOURCE_SUFFIXES:
+            return {"ok": False, "error": "只支持编辑文本源码（html/css/js/json/py/md/txt/svg/xml）"}
+        if not p.is_file():
+            return {"ok": False, "error": f"文件不存在: {rel}"}
+        try:
+            if p.stat().st_size > _SOURCE_MAX_BYTES:
+                return {"ok": False, "error": "文件超过 4 MB，请用外部编辑器打开"}
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            return {"ok": False, "error": f"读取失败: {e}"}
+        return {"ok": True, "file": p.relative_to(d).as_posix(),
+                "path": str(p.relative_to(APPS_ROOT.resolve()).as_posix()), "content": text}
+
+    def save_app_source(self, app_id: str, rel_path: str, content: str) -> Dict[str, Any]:
+        """把编辑器里的文本写回 App 目录内的源码文件（限文本扩展名、限 App 目录内）。
+
+        只做整文件覆盖写入：App 目录外的一切路径（绝对路径 / .. / 其他 App）都拒绝。
+        """
+        d = _node_dir(app_id)
+        if d is None:
+            return {"ok": False, "error": f"未找到 App: {app_id}"}
+        p = _source_file(d, rel_path)
+        if p is None:
+            return {"ok": False, "error": "路径非法（必须是 App 目录内的相对路径）"}
+        if p.suffix.lower() not in _SOURCE_SUFFIXES:
+            return {"ok": False, "error": "只支持编辑文本源码（html/css/js/json/py/md/txt/svg/xml）"}
+        text = "" if content is None else str(content)
+        if len(text.encode("utf-8")) > _SOURCE_MAX_BYTES:
+            return {"ok": False, "error": "内容超过 4 MB，请用外部编辑器保存"}
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding="utf-8")
+        except OSError as e:
+            return {"ok": False, "error": f"保存失败: {e}"}
+        return {"ok": True, "file": p.relative_to(d).as_posix(),
+                "path": str(p.relative_to(APPS_ROOT.resolve()).as_posix())}
 
     # ==================== 新建（UI 化 / URL 化） ====================
     def _new_app_dir(self, parent_dir: str, dir_name: str):

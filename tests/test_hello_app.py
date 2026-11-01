@@ -1,4 +1,4 @@
-"""Hello 服务 App 测试（apps/work/hello）：契约与行为。
+"""Hello 服务 App 测试（按 id 定位，当前在 apps/work/系统/hello）：契约与行为。
 
 验证「App 运行即在后台开端口」的模式：
 - 元数据符合 App 规范（manifest.json 字段）
@@ -12,7 +12,20 @@ import urllib.request
 from pathlib import Path
 
 APPS_ROOT = Path(__file__).resolve().parents[1] / "apps"
-HELLO_DIR = APPS_ROOT / "work" / "hello"
+
+
+def _find_by_id(root: Path, app_id: str, fallback: str) -> Path:
+    """按 manifest 的 id 定位 App 目录（App 会被搬进分类，不要写死路径）。"""
+    for mf in root.glob("**/manifest.json"):
+        try:
+            if json.loads(mf.read_text(encoding="utf-8")).get("id") == app_id:
+                return mf.parent
+        except (OSError, ValueError):
+            continue
+    return root / fallback
+
+
+HELLO_DIR = _find_by_id(APPS_ROOT, "hello.service", "work/hello")
 BASE = "http://127.0.0.1:8787"
 
 

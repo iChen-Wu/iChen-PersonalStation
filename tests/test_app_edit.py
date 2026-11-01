@@ -284,6 +284,34 @@ class AppEditTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("落位参照", r["error"])
 
+    # ---------- 源码读写（HTML 导入型 App 改界面） ----------
+
+    def test_source_read_write_defaults_to_ui_html(self):
+        m = app_edit.AppEditMixin()
+        r = m.create_app_from_html("work", "小工具", "<html><body>旧</body></html>", app_id="ui.tool")
+        self.assertTrue(r["ok"], r)
+        got = m.get_app_source("ui.tool")
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["file"], "ui/index.html")
+        self.assertIn("旧", got["content"])
+        saved = m.save_app_source("ui.tool", got["file"], "<html><body>新</body></html>")
+        self.assertTrue(saved["ok"], saved)
+        text = (self.root / "work" / "小工具" / "ui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("新", text)
+
+    def test_source_rejects_escape_and_binary(self):
+        m = app_edit.AppEditMixin()
+        self.assertFalse(m.get_app_source("a.alpha", "../beta/manifest.json")["ok"])
+        self.assertFalse(m.get_app_source("a.alpha", "ui/../../beta/manifest.json")["ok"])
+        self.assertFalse(m.get_app_source("a.alpha", "C:/Windows/win.ini")["ok"])
+        self.assertFalse(m.save_app_source("a.alpha", "ui/run.exe", "x")["ok"])
+        self.assertFalse(m.save_app_source("a.alpha", "../beta/manifest.json", "{}")["ok"])
+
+    def test_source_missing_file_reports_error(self):
+        r = app_edit.AppEditMixin().get_app_source("a.alpha")
+        self.assertFalse(r["ok"])
+        self.assertIn("不存在", r["error"])
+
     # ---------- 越界防护 ----------
 
     def test_path_traversal_is_rejected(self):

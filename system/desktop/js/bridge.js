@@ -89,6 +89,20 @@
             return { ok: false, error: '未连接 pywebview 桥' };
         },
 
+        /** 读取 App 源码（默认 manifest 指定的 ui/index.html） */
+        async getAppSource(appId, relPath) {
+            const api = getRealApi();
+            if (api) return api.get_app_source(appId, relPath || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
+        /** 保存 App 源码（只允许 App 目录内的文本文件） */
+        async saveAppSource(appId, relPath, content) {
+            const api = getRealApi();
+            if (api) return api.save_app_source(appId, relPath || '', content || '');
+            return { ok: false, error: '未连接 pywebview 桥' };
+        },
+
         /** 申请系统文件对话框（App 要真实本地路径时经框架转发；浏览器预览无对话框） */
         async pickFiles(mode, multiple, filter, defaultName) {
             const api = getRealApi();

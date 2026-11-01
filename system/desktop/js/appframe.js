@@ -102,7 +102,8 @@
         try {
             const r = await iChen.PyAPI.getAppUi(node.id);
             if (r && r.ok && r.html) {
-                let html = r.html;
+                // 共享样式直接拼进 head（纯 HTML App 不写 message 监听也能拿到中枢样式）
+                let html = await withSharedCss(r.html);
                 if (r.dir && /<head[^>]*>/i.test(html)) {
                     html = html.replace(/<head([^>]*)>/i, '<head$1><base href="' + r.dir + '/">');
                 }
@@ -397,6 +398,39 @@
 
     function themeOf() {
         return (document.documentElement.dataset.theme || 'system');
+    }
+
+    /** shared/common/css 文本（会话内只取一次） */
+    let sharedCssPromise = null;
+    function sharedCssText() {
+        if (!sharedCssPromise) {
+            sharedCssPromise = iChen.PyAPI.getSharedCss()
+                .then((css) => String(css || ''))
+                .catch(() => '');
+        }
+        return sharedCssPromise;
+    }
+
+    /** 把共享样式与当前主题直接拼进 HTML（挂载前调用）。
+     *  这样「导入一段 HTML」做出来的纯界面 App，就算完全不理 message 事件，
+     *  也能直接用中枢的 CSS 变量和 .btn 等组件类。 */
+    async function withSharedCss(html) {
+        let out = String(html || '');
+        const theme = themeOf();
+        if (theme === 'light' || theme === 'dark') {
+            // 显式主题写进 <html data-theme>，深色变量不依赖系统偏好
+            out = out.replace(/<html([^>]*)>/i, (m, attrs) =>
+                (/data-theme/i.test(attrs) ? m : '<html' + attrs + ' data-theme="' + theme + '">'));
+        }
+        const css = await sharedCssText();
+        if (!css) return out;
+        const style = '<style id="ichen-shared-css">\n' + css + '\n</style>';
+        // 用函数形式替换：样式文本里的 $ 不会被当成替换占位符
+        if (/<\/head>/i.test(out)) return out.replace(/<\/head>/i, () => style + '</head>');
+        if (/<html[^>]*>/i.test(out)) {
+            return out.replace(/<html([^>]*)>/i, (m, attrs) => '<html' + attrs + '><head>' + style + '</head>');
+        }
+        return style + out;
     }
 
     /** 注入 shared 样式（URL 型 App 不注入：它是裸容器，不参与框架协议） */

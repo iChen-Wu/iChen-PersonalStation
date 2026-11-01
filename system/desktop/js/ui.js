@@ -255,6 +255,7 @@
                 input.value = defaultVal || '';
                 box.appendChild(input);
             } else if (mode === 'textarea') {
+                box.classList.add('dlg-wide');   // 源码 / HTML 编辑需要更宽
                 input = document.createElement('textarea');
                 input.className = 'dlg-input dlg-textarea';
                 input.rows = 14;

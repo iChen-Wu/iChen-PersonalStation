@@ -2,7 +2,7 @@
 
 V3.0.0 · 常驻改造：
 - 中枢进程在关窗后**继续运行**（App 后台逻辑、HTTP 端口不中断）
-- 托盘图标提供「打开 / 退出」两个操作
+- 托盘图标提供「打开 / 重启 / 退出」三个操作
 - 图标文件缺失或 pystray 未安装时静默降级（不崩，只是没托盘）
 """
 
@@ -41,9 +41,11 @@ class TrayManager:
     """托盘管理器：持图标，供 main / window 调用。"""
 
     def __init__(self, on_open: Callable, on_quit: Callable,
-                 icon_path: Optional[Path] = None):
+                 icon_path: Optional[Path] = None,
+                 on_restart: Optional[Callable] = None):
         self._on_open = on_open
         self._on_quit = on_quit
+        self._on_restart = on_restart
         self._icon_path = icon_path
         self._icon: Optional[Icon] = None
         self._thread: Optional[threading.Thread] = None
@@ -59,10 +61,11 @@ class TrayManager:
         if self._icon:
             return True  # 已启动
         image = _load_icon_image(self._icon_path)
-        menu = Menu(
-            MenuItem("打开", lambda: self._on_open()),
-            MenuItem("退出", lambda: self._on_quit()),
-        )
+        items = [MenuItem("打开", lambda: self._on_open())]
+        if self._on_restart:
+            items.append(MenuItem("重启", lambda: self._on_restart()))
+        items.append(MenuItem("退出", lambda: self._on_quit()))
+        menu = Menu(*items)
         self._icon = Icon("iChen", image, "iChen", menu)
         self._thread = threading.Thread(target=self._icon.run, daemon=True)
         self._thread.start()
