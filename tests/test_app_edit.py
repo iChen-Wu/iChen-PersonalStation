@@ -239,6 +239,22 @@ class AppEditTest(unittest.TestCase):
         info = json.loads((self.root / "work" / "inner" / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(info["order"], 4)   # alpha beta 分类 之后
 
+    def test_move_node_any_depth(self):
+        """任意层级进出：深层拖到一级、一级拖进另一分支深层。"""
+        m = app_edit.AppEditMixin()
+        m.create_folder("work", "甲类")
+        m.create_folder("work/甲类", "乙类")
+        _mk_app(self.root, "work/甲类/乙类/inner", "i.inner", "内")
+        r = m.move_node("work/甲类/乙类/inner", "work")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["path"], "work/inner")
+        m.create_folder("work", "丙类")
+        m.create_folder("work/丙类", "丁类")
+        r2 = m.move_node("work/inner", "work/丙类/丁类")
+        self.assertTrue(r2["ok"], r2)
+        self.assertEqual(r2["path"], "work/丙类/丁类/inner")
+        self.assertTrue((self.root / "work" / "丙类" / "丁类" / "inner" / "manifest.json").is_file())
+
     def test_move_node_rejects_same_dir_and_own_subdir(self):
         m = app_edit.AppEditMixin()
         self.assertFalse(m.move_node("work/alpha", "work")["ok"])          # 目标=当前目录

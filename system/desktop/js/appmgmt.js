@@ -102,23 +102,81 @@
     }
 
     /* ---------- 拖拽排序 / 移动：拖动行时目标位置显示插入横线，松手落位 ----------
-       - 同一 parentPath 内：纯排序，整表路径交给 reorder_nodes 写 order=1..N；
-       - 拖出文件夹：目标行在「上一级」目录时放行，松手走 move_node（连移带落位，
-         两边目录的 order 都重写）；根目录（分区层）不接受拖出落位——跨分区移动
-         走 Tab 栏落点（见 makeMoveTarget）；
+       - 同父级：纯排序，整表路径交给 reorder_nodes 写 order=1..N；
+       - 任意层级进出：拖到文件夹行中部＝移入该文件夹；拖到任意行的上/下缘＝移到
+         该行的父目录并落位。跨级一律走 move_node（连移带落位，两边目录的 order
+         都重写）；apps/ 根层不接受 item 落位（会变成新分区）——跨分区走 Tab 落点
+         （见 makeMoveTarget）；
+       - 视觉跟随自绘（.drag-ghost，fixed 层）：拖出列表范围也照样按指针位置跟随，
+         不受容器裁剪；但落点只在列表行区间内判定，悬在列表外时不出插入线；
        - 拖动时指针压到可滚动容器上/下缘（或越出范围），容器按纵坐标持续滚动。
        插入线宿主可单独指定——左侧树的文件夹行把线画在整个折叠盒的底缘，
        而不是文件夹行自身的下缘（后者在展开时看着像「插进文件夹内部」，语义不对）。 */
-    let dragCtx = null;   // { node, siblings, parentPath, isZone, row, onChange, target, after, targetSiblings, targetParent }
+    let dragCtx = null;   // { node, siblings, parentPath, isZone, row, onChange, target, after, targetSiblings, targetParent, inside }
     let dropLine = null;
+    let dropInsideEl = null;
+    let ghostEl = null;
 
     function hideDropLine() {
         if (dropLine) { dropLine.remove(); dropLine = null; }
     }
 
-    /* 拖拽边缘自动滚动：dragover 持续上报指针位置，定时器按缘区距离滚动容器 */
+    function hideInside() {
+        if (dropInsideEl) { dropInsideEl.classList.remove('drop-inside'); dropInsideEl = null; }
+    }
+
+    /* 自绘拖拽跟随：fixed 层的小卡，纯视觉、不参与落点判定，故不受列表容器裁剪 */
+    function moveGhost(x, y) {
+        if (ghostEl) ghostEl.style.transform = 'translate(' + (x + 14) + 'px, ' + (y + 10) + 'px)';
+    }
+
+    function startGhost(row, x, y) {
+        stopGhost();
+        const g = document.createElement('div');
+        g.className = 'drag-ghost';
+        const img = row.querySelector('img');
+        if (img) {
+            const i2 = document.createElement('img');
+            i2.src = img.src;
+            g.appendChild(i2);
+        }
+        const s = document.createElement('span');
+        const nameEl = row.querySelector('.trow-name, .ami-name');
+        s.textContent = nameEl ? nameEl.textContent : (row.textContent || '').trim().slice(0, 20);
+        g.appendChild(s);
+        document.body.appendChild(g);
+        ghostEl = g;
+        moveGhost(x, y);
+    }
+
+    function stopGhost() {
+        if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+    }
+
+    // 拖拽时隐藏浏览器原生残影（它会被列表容器裁剪），视觉改用自绘 ghost
+    // setDragImage 需要一个在文档里的元素：惰性建一个屏幕外的 1×1 空 div
+    let blankDragImg = null;
+    function hideNativeDragImage(dt) {
+        if (!blankDragImg) {
+            blankDragImg = document.createElement('div');
+            blankDragImg.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+            (document.body || document.documentElement).appendChild(blankDragImg);
+        }
+        try { dt.setDragImage(blankDragImg, 0, 0); } catch (err) { /* 不支持就退回原生残影 */ }
+    }
+
+    /* 拖拽边缘自动滚动 + ghost 跟随：dragover 在拖拽过程中持续触发（指针静止也触发），
+       据此维持跟随与滚动 */
     const dragScroll = { timer: null, x: 0, y: 0 };
-    document.addEventListener('dragover', (e) => { dragScroll.x = e.clientX; dragScroll.y = e.clientY; }, true);
+    document.addEventListener('dragover', (e) => {
+        dragScroll.x = e.clientX; dragScroll.y = e.clientY;
+        moveGhost(e.clientX, e.clientY);
+        // 指针不在任何列表行上（含拖出容器）：只跟随，不参与排序判定
+        if (dragCtx && !(e.target && e.target.closest && e.target.closest('.drop-anchor'))) {
+            hideDropLine();
+            hideInside();
+        }
+    }, true);
 
     function startDragScroll() {
         if (dragScroll.timer) return;
@@ -144,6 +202,8 @@
 
     function cleanupDrag() {
         hideDropLine();
+        hideInside();
+        stopGhost();
         stopDragScroll();
         if (dragCtx && dragCtx.row) dragCtx.row.classList.remove('drag-sort-source');
         document.querySelectorAll('.drop-target').forEach((el) => el.classList.remove('drop-target'));
@@ -155,15 +215,34 @@
         return i < 0 ? '' : p.slice(0, i);
     }
 
-    /* 落点是否放行：同一父级内重排；或「拖出文件夹」——目标行在上一级目录 */
+    /* 落点是否放行（任意层级）：
+       - item 可落在任意目录（进多少层、出多少层都行），但不能落回 apps/ 根层
+         （那会把 App 提成分区），也不能落进自身 / 自己的子孙目录；
+       - 分区（apps/ 根层节点，isZone）只与同层节点互相重排。 */
     function acceptDrop(pp) {
         if (!dragCtx) return false;
-        if (dragCtx.parentPath === pp) return true;
-        return !dragCtx.isZone && pp !== '' && pp === _parentOf(dragCtx.parentPath);
+        if (dragCtx.isZone) return pp === '';
+        if (pp === '') return false;
+        const self = dragCtx.node.path || '';
+        if (!self) return false;
+        if (pp === self || pp.indexOf(self + '/') === 0) return false;
+        return true;
     }
 
     async function commitDrop(ctx) {
-        if (!ctx.target || ctx.target.path === ctx.node.path) return;
+        if (!ctx || !ctx.target || ctx.target.path === ctx.node.path) return;
+        if (ctx.inside) {
+            // 移入文件夹（任意层级）：已在该文件夹里的不重复请求
+            if (_parentOf(ctx.node.path) === ctx.target.path) return;
+            const r = await iChen.PyAPI.moveNode(ctx.node.path, ctx.target.path, null);
+            if (r && r.ok) {
+                if (iChen.UI) iChen.UI.showToast('已移入「' + (ctx.target.name || ctx.target.path) + '」');
+                (ctx.onChange || afterChange)();
+            } else {
+                toast(false, '', '移动失败', r);
+            }
+            return;
+        }
         if ((ctx.targetParent || '') === (ctx.parentPath || '')) {
             // 同父级：整表重排
             const list = (ctx.siblings || []).slice();
@@ -185,7 +264,7 @@
             }
             return;
         }
-        // 跨级（拖出文件夹）：move_node 落位到目标父级；beforePath = 落点之后的那个兄弟
+        // 跨级：move_node 落位到目标父级；beforePath = 落点之后的那个兄弟
         const list = (ctx.targetSiblings || []).slice();
         let to = list.findIndex((n) => n.path === ctx.target.path);
         if (to < 0) return;
@@ -199,10 +278,12 @@
         }
     }
 
-    function makeSortable(row, siblings, node, parentPath, onChange, lineHost, axis) {
-        const host = lineHost || row;
+    function makeSortable(row, siblings, node, parentPath, onChange, opts) {
+        const o = opts || {};
+        const host = o.lineHost || row;
         const pp = parentPath || '';
-        const ax = axis === 'x' ? 'x' : 'y';   // 横向容器（底部 Tab 栏）传 'x'：插入线为竖线
+        const ax = o.axis === 'x' ? 'x' : 'y';   // 横向容器（底部 Tab 栏）传 'x'：插入线为竖线
+        const zoneTarget = !!o.isZone;           // 目标行是分区 Tab：item 拖拽交给 makeMoveTarget
         row.draggable = true;
         row.classList.add('drop-anchor');
         if (host !== row) host.classList.add('drop-anchor');
@@ -212,19 +293,39 @@
             cleanupDrag();
             dragCtx = { node, siblings: siblings || [], parentPath: pp, isZone: !pp, row, onChange };
             e.dataTransfer.effectAllowed = 'move';
+            hideNativeDragImage(e.dataTransfer);
             try { e.dataTransfer.setData('text/plain', node.path || ''); } catch (err) { /* 兜底：不允许 setData 也照常拖 */ }
+            // dragstart 里部分浏览器的 clientX/Y 为 0，退回行内坐标
+            const r0 = row.getBoundingClientRect();
+            startGhost(row, e.clientX || (r0.left + 40), e.clientY || (r0.top + r0.height / 2));
             startDragScroll();
-            // 延迟半透明：先让浏览器按原样生成拖拽残影
+            // 延迟半透明，避免影响 ghost 起始位置
             setTimeout(() => { if (dragCtx && dragCtx.row === row) row.classList.add('drag-sort-source'); }, 0);
         });
         row.addEventListener('dragover', (e) => {
             if (!acceptDrop(pp) || dragCtx.node === node) return;
+            if (zoneTarget && !dragCtx.isZone) return; // 移到该分区由 makeMoveTarget 接管
             e.preventDefault(); // 只有 preventDefault 才允许 drop
             e.dataTransfer.dropEffect = 'move';
             const rect = row.getBoundingClientRect();
+            const dy = e.clientY - rect.top;
+            // 文件夹行中部：移入该文件夹（任意层级都可进可出）
+            const canInside = !zoneTarget && ax === 'y' && node.type === 'folder';
+            if (canInside && dy > rect.height * 0.28 && dy < rect.height * 0.72) {
+                hideDropLine();
+                if (dropInsideEl !== row) { hideInside(); row.classList.add('drop-inside'); dropInsideEl = row; }
+                dragCtx.target = node;
+                dragCtx.inside = true;
+                dragCtx.after = false;
+                dragCtx.targetParent = node.path;
+                dragCtx.targetSiblings = [];
+                return;
+            }
+            hideInside();
+            dragCtx.inside = false;
             const after = ax === 'x'
                 ? (e.clientX - rect.left) > rect.width / 2
-                : (e.clientY - rect.top) > rect.height / 2;
+                : dy > rect.height / 2;
             dragCtx.target = node;
             dragCtx.after = after;
             dragCtx.targetSiblings = siblings || [];
@@ -239,6 +340,7 @@
         });
         row.addEventListener('drop', (e) => {
             if (!acceptDrop(pp) || dragCtx.node === node) return;
+            if (zoneTarget && !dragCtx.isZone) return;
             e.preventDefault();
             e.stopPropagation();
             const ctx = dragCtx;
@@ -258,6 +360,7 @@
             e.stopPropagation();
             e.dataTransfer.dropEffect = 'move';
             hideDropLine();
+            hideInside();
             el.classList.add('drop-target');
         });
         el.addEventListener('dragleave', () => el.classList.remove('drop-target'));

@@ -167,7 +167,7 @@
             if (iChen.AppMgmt && iChen.AppMgmt.makeSortable) {
                 const axis = document.documentElement.getAttribute('data-tabbar') === 'bottom' ? 'x' : 'y';
                 const zoneNodes = (state.zones || []).map((x) => ({ path: x.key, name: x.name }));
-                iChen.AppMgmt.makeSortable(b, zoneNodes, { path: z.key, name: z.name }, '', () => { reload(); }, null, axis);
+                iChen.AppMgmt.makeSortable(b, zoneNodes, { path: z.key, name: z.name }, '', () => { reload(); }, { axis, isZone: true });
                 if (iChen.AppMgmt.makeMoveTarget) iChen.AppMgmt.makeMoveTarget(b, z, () => { reload(); });
             }
             box.appendChild(b);

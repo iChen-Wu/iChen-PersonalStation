@@ -89,7 +89,7 @@
         const afterSort = () => { if (iChen.Shell) iChen.Shell.reload(); };
         const sortable = (row, node, lineHost) => {
             if (iChen.AppMgmt && iChen.AppMgmt.makeSortable) {
-                iChen.AppMgmt.makeSortable(row, nodes, node, parentPath, afterSort, lineHost);
+                iChen.AppMgmt.makeSortable(row, nodes, node, parentPath, afterSort, { lineHost });
             }
         };
         nodes.forEach((node) => {
