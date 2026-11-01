@@ -85,12 +85,20 @@
     /* ---------- 递归渲染 ---------- */
     // parentPath：本层节点所属父目录（相对 apps/）；与 nodes 一起交给右键菜单做同层排序
     function renderList(container, nodes, parentPath) {
+        // 拖拽排序落点后整树重扫（与右键「上移/下移」同一回调）
+        const afterSort = () => { if (iChen.Shell) iChen.Shell.reload(); };
+        const sortable = (row, node, lineHost) => {
+            if (iChen.AppMgmt && iChen.AppMgmt.makeSortable) {
+                iChen.AppMgmt.makeSortable(row, nodes, node, parentPath, afterSort, lineHost);
+            }
+        };
         nodes.forEach((node) => {
             if (node.type === 'folder') {
                 const key = node.path || node.name;
                 const open = !collapsedFolders.has(key);
                 const box = document.createElement('div');
-                box.appendChild(folderRow(node, open, nodes, parentPath));
+                const row = folderRow(node, open, nodes, parentPath);
+                box.appendChild(row);
                 const childBox = document.createElement('div');
                 childBox.className = 'trow-children';
                 // 收起状态不仅恢复箭头（.open），子盒也要同步隐藏——否则重渲染后子项又全部露出
@@ -98,8 +106,13 @@
                 renderList(childBox, node.children || [], node.path);
                 box.appendChild(childBox);
                 container.appendChild(box);
+                // 线宿主给整个折叠盒：「放到文件夹之后」的横线画在子树底缘，
+                // 展开时才不会看着像「插进文件夹内部」
+                sortable(row, node, box);
             } else if (node.type === 'app') {
-                container.appendChild(appRow(node, nodes, parentPath));
+                const row = appRow(node, nodes, parentPath);
+                container.appendChild(row);
+                sortable(row, node);
             }
         });
     }

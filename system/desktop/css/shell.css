@@ -911,3 +911,21 @@ html[data-tabbar="bottom"] .tabbar .tab span {
 }
 .icon-cell:hover .icon-del { display: block; }
 .icon-picker-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+/* ============================================================
+   拖拽排序（v3.4.1）：拖动行时目标位置上/下缘的插入横线 + 拖拽源半透明
+   - .drop-anchor：插入线的定位锚（行本身；树里文件夹则是最外层折叠盒）
+   - 线按目标行盒宽铺满，随层级自然缩进（行的 padding / .trow-children 缩进）
+   ============================================================ */
+.drop-anchor { position: relative; }
+.drop-line {
+    position: absolute; left: 6px; right: 6px; height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    box-shadow: 0 0 4px var(--accent);
+    pointer-events: none;
+    z-index: 40;
+}
+.drop-line-top { top: -1px; }
+.drop-line-bottom { bottom: -1px; }
+.drag-sort-source { opacity: .45; }

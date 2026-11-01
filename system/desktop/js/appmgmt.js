@@ -101,6 +101,84 @@
         return { up: () => move(-1), down: () => move(1) };
     }
 
+    /* ---------- 拖拽排序（同父级）：拖动行时目标位置显示插入横线，松手落位 ----------
+       只认同一 parentPath 内的拖放（跨目录归「移动」动作管）；提交与 makeMove 同款：
+       整表路径交给 reorder_nodes 写 order=1..N。插入线宿主可单独指定——左侧树的
+       文件夹行把线画在整个折叠盒的底缘，而不是文件夹行自身的下缘（后者在展开时
+       看着像「插进文件夹内部」，语义不对）。 */
+    let dragCtx = null;   // { node, siblings, parentPath, row, onChange, target, after }
+    let dropLine = null;
+
+    function hideDropLine() {
+        if (dropLine) { dropLine.remove(); dropLine = null; }
+    }
+
+    function cleanupDrag() {
+        hideDropLine();
+        if (dragCtx && dragCtx.row) dragCtx.row.classList.remove('drag-sort-source');
+        dragCtx = null;
+    }
+
+    async function commitDrop(ctx) {
+        const list = (ctx.siblings || []).slice();
+        const from = list.findIndex((n) => n.path === ctx.node.path);
+        if (from < 0 || !ctx.target || ctx.target.path === ctx.node.path) return;
+        const before = list.map((n) => n.path).join('\n');
+        const moved = list.splice(from, 1)[0];
+        let to = list.findIndex((n) => n.path === ctx.target.path);
+        if (to < 0) return;
+        if (ctx.after) to += 1;
+        list.splice(to, 0, moved);
+        if (list.map((n) => n.path).join('\n') === before) return; // 位置没变，不发请求
+        const r = await iChen.PyAPI.reorderNodes(ctx.parentPath, list.map((n) => n.path));
+        if (r && r.ok) {
+            if (iChen.UI) iChen.UI.showToast('排序已更新');
+            (ctx.onChange || afterChange)();
+        } else {
+            toast(false, '', '排序失败', r);
+        }
+    }
+
+    function makeSortable(row, siblings, node, parentPath, onChange, lineHost) {
+        const host = lineHost || row;
+        row.draggable = true;
+        row.classList.add('drop-anchor');
+        if (host !== row) host.classList.add('drop-anchor');
+        // 行内 img 默认可单独拖（浏览器原生图片拖拽），禁掉，让整行作为拖拽源
+        row.querySelectorAll('img').forEach((im) => { im.draggable = false; });
+        row.addEventListener('dragstart', (e) => {
+            cleanupDrag();
+            dragCtx = { node, siblings: siblings || [], parentPath: parentPath || '', row, onChange };
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', node.path || ''); } catch (err) { /* 兜底：不允许 setData 也照常拖 */ }
+            // 延迟半透明：先让浏览器按原样生成拖拽残影
+            setTimeout(() => { if (dragCtx && dragCtx.row === row) row.classList.add('drag-sort-source'); }, 0);
+        });
+        row.addEventListener('dragover', (e) => {
+            if (!dragCtx || dragCtx.parentPath !== (parentPath || '') || dragCtx.node === node) return;
+            e.preventDefault(); // 只有 preventDefault 才允许 drop
+            e.dataTransfer.dropEffect = 'move';
+            const rect = row.getBoundingClientRect();
+            const after = (e.clientY - rect.top) > rect.height / 2;
+            dragCtx.target = node;
+            dragCtx.after = after;
+            hideDropLine();
+            const line = document.createElement('div');
+            line.className = 'drop-line ' + (after ? 'drop-line-bottom' : 'drop-line-top');
+            host.appendChild(line);
+            dropLine = line;
+        });
+        row.addEventListener('drop', (e) => {
+            if (!dragCtx || dragCtx.parentPath !== (parentPath || '')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const ctx = dragCtx;
+            cleanupDrag();
+            commitDrop(ctx);
+        });
+        row.addEventListener('dragend', cleanupDrag);
+    }
+
     async function afterChange() {
         if (iChen.Shell) await iChen.Shell.reload();
         render();
@@ -205,6 +283,7 @@
         };
         const setIcon = () => applyFolderIcon(node, afterChange);
         const move = makeMove(siblings, node, parentPath, afterChange);
+        makeSortable(item, siblings, node, parentPath, afterChange);
 
         // 右键菜单：新建 / 重命名 / 描述 / 图标 / 排序 / 删除
         item.addEventListener('contextmenu', (e) => {
@@ -302,6 +381,7 @@
         addBtn(item, '卸载', '删除该 App 的目录', a.uninstall, true);
 
         const move = makeMove(siblings, app, parentPath, afterChange);
+        makeSortable(item, siblings, app, parentPath, afterChange);
 
         // 右键菜单（与按钮同动作）
         item.addEventListener('contextmenu', (e) => {
@@ -608,6 +688,7 @@
         applyAppIcon,      // 图标预设弹窗 → App（左侧列表右键复用）
         applyFolderIcon,   // 图标预设弹窗 → 文件夹（左侧列表右键复用）
         makeMove,          // 同父级上移 / 下移（左侧列表右键复用）
+        makeSortable,      // 拖拽排序：插入横线 + 松手落位（左侧列表行复用）
         showNewMenu,       // 供 App 管理「新建」按钮 & 左侧空白处右键复用
         newApp,
         newFolder,
