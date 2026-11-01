@@ -424,8 +424,15 @@
         }
         const css = await sharedCssText();
         if (!css) return out;
-        const style = '<style id="ichen-shared-css">\n' + css + '\n</style>';
+        // 共享样式里有给中枢外壳用的全局重置（html/body height:100% + overflow:hidden）：
+        // 原样塞进 App 会让长内容不能滚动，这里追加一条恢复规则，回到正常文档流。
+        const style = '<style id="ichen-shared-css">\n' + css
+            + '\nhtml, body { height: auto; overflow: auto; }\n</style>';
+        // 插在 <head> 开标签之后（不是 </head> 之前）：App 自己的样式写在后面，可覆盖注入层
         // 用函数形式替换：样式文本里的 $ 不会被当成替换占位符
+        if (/<head[^>]*>/i.test(out)) {
+            return out.replace(/<head([^>]*)>/i, (m, attrs) => '<head' + attrs + '>' + style);
+        }
         if (/<\/head>/i.test(out)) return out.replace(/<\/head>/i, () => style + '</head>');
         if (/<html[^>]*>/i.test(out)) {
             return out.replace(/<html([^>]*)>/i, (m, attrs) => '<html' + attrs + '><head>' + style + '</head>');
