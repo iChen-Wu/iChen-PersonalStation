@@ -107,15 +107,14 @@
          该行的父目录并落位。跨级一律走 move_node（连移带落位，两边目录的 order
          都重写）；apps/ 根层不接受 item 落位（会变成新分区）——跨分区走 Tab 落点
          （见 makeMoveTarget）；
-       - 视觉跟随自绘（.drag-ghost，fixed 层）：拖出列表范围也照样按指针位置跟随，
-         不受容器裁剪；但落点只在列表行区间内判定，悬在列表外时不出插入线；
+       - 拖到列表外（舞台）：插入横线照样按指针纵坐标跟随到最近的行，不在列表外
+         把拖拽判成「禁止」；列表外松手不落位（落点仍以列表行区间为准）；
        - 拖动时指针压到可滚动容器上/下缘（或越出范围），容器按纵坐标持续滚动。
        插入线宿主可单独指定——左侧树的文件夹行把线画在整个折叠盒的底缘，
        而不是文件夹行自身的下缘（后者在展开时看着像「插进文件夹内部」，语义不对）。 */
     let dragCtx = null;   // { node, siblings, parentPath, isZone, row, onChange, target, after, targetSiblings, targetParent, inside }
     let dropLine = null;
     let dropInsideEl = null;
-    let ghostEl = null;
 
     function hideDropLine() {
         if (dropLine) { dropLine.remove(); dropLine = null; }
@@ -125,57 +124,79 @@
         if (dropInsideEl) { dropInsideEl.classList.remove('drop-inside'); dropInsideEl = null; }
     }
 
-    /* 自绘拖拽跟随：fixed 层的小卡，纯视觉、不参与落点判定，故不受列表容器裁剪 */
-    function moveGhost(x, y) {
-        if (ghostEl) ghostEl.style.transform = 'translate(' + (x + 14) + 'px, ' + (y + 10) + 'px)';
+    /* 在指定行上落插入线（行内 dragover 与「列表外跟随」共用） */
+    function placeLine(info, after) {
+        dragCtx.target = info.node;
+        dragCtx.after = after;
+        dragCtx.targetSiblings = info.siblings || [];
+        dragCtx.targetParent = info.parentPath || '';
+        dragCtx.inside = false;
+        hideInside();
+        hideDropLine();
+        const line = document.createElement('div');
+        line.className = info.ax === 'x'
+            ? 'drop-line drop-line-x ' + (after ? 'drop-line-right' : 'drop-line-left')
+            : 'drop-line ' + (after ? 'drop-line-bottom' : 'drop-line-top');
+        info.host.appendChild(line);
+        dropLine = line;
     }
 
-    function startGhost(row, x, y) {
-        stopGhost();
-        const g = document.createElement('div');
-        g.className = 'drag-ghost';
-        const img = row.querySelector('img');
-        if (img) {
-            const i2 = document.createElement('img');
-            i2.src = img.src;
-            g.appendChild(i2);
+    /* 指针不在任何列表行上时（舞台 / 列表外）：按纵坐标找最近的行，横线继续跟随。
+       落点仍然只认列表行区间——这里只是把「最近行」的这个判定搬到了列表尺子上。 */
+    function nearestRow(container, y) {
+        let best = null;
+        let bestDist = Infinity;
+        container.querySelectorAll('.drop-anchor').forEach((row) => {
+            const info = row._sortInfo;
+            if (!info) return;   // 折叠盒等只做线的宿主，不参与判定
+            const rect = row.getBoundingClientRect();
+            if (rect.height <= 0) return;
+            const d = Math.abs(y - (rect.top + rect.height / 2));
+            if (d < bestDist) { bestDist = d; best = { info, rect }; }
+        });
+        return best;
+    }
+
+    function followPointer(x, y) {
+        if (!dragCtx) return;
+        // 始终以「拖拽源所在的列表」为尺子：指针拖到舞台等列表外区域时，
+        // 横线仍在这个列表里按纵坐标跟随最近的插入位置
+        const srcEl = dragCtx.row && dragCtx.row.closest
+            ? dragCtx.row.closest('.listpane-body, #zone-tabs, .appmgmt-view')
+            : null;
+        const containers = [];
+        if (srcEl) {
+            containers.push({ el: srcEl, r: srcEl.getBoundingClientRect() });
+        } else {
+            document.querySelectorAll('.listpane-body, #zone-tabs, .appmgmt-view').forEach((el) => {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) containers.push({ el, r });
+            });
         }
-        const s = document.createElement('span');
-        const nameEl = row.querySelector('.trow-name, .ami-name');
-        s.textContent = nameEl ? nameEl.textContent : (row.textContent || '').trim().slice(0, 20);
-        g.appendChild(s);
-        document.body.appendChild(g);
-        ghostEl = g;
-        moveGhost(x, y);
+        if (!containers.length) return;
+        const picked = containers[0];
+        const best = nearestRow(picked.el, y);
+        if (!best) return;
+        const info = best.info;
+        if (!acceptDrop(info.parentPath) || dragCtx.node === info.node) return;
+        if (info.zoneTarget && !dragCtx.isZone) return;
+        const rect = best.rect;
+        const after = info.ax === 'x'
+            ? (x - rect.left) > rect.width / 2
+            : (y - rect.top) > rect.height / 2;
+        placeLine(info, after);
     }
 
-    function stopGhost() {
-        if (ghostEl) { ghostEl.remove(); ghostEl = null; }
-    }
-
-    // 拖拽时隐藏浏览器原生残影（它会被列表容器裁剪），视觉改用自绘 ghost
-    // setDragImage 需要一个在文档里的元素：惰性建一个屏幕外的 1×1 空 div
-    let blankDragImg = null;
-    function hideNativeDragImage(dt) {
-        if (!blankDragImg) {
-            blankDragImg = document.createElement('div');
-            blankDragImg.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
-            (document.body || document.documentElement).appendChild(blankDragImg);
-        }
-        try { dt.setDragImage(blankDragImg, 0, 0); } catch (err) { /* 不支持就退回原生残影 */ }
-    }
-
-    /* 拖拽边缘自动滚动 + ghost 跟随：dragover 在拖拽过程中持续触发（指针静止也触发），
-       据此维持跟随与滚动 */
+    /* 拖拽边缘自动滚动 + 列表外横线跟随：dragover 在拖拽过程中持续触发
+       （指针静止也触发），据此维持跟随与滚动 */
     const dragScroll = { timer: null, x: 0, y: 0 };
     document.addEventListener('dragover', (e) => {
         dragScroll.x = e.clientX; dragScroll.y = e.clientY;
-        moveGhost(e.clientX, e.clientY);
-        // 指针不在任何列表行上（含拖出容器）：只跟随，不参与排序判定
-        if (dragCtx && !(e.target && e.target.closest && e.target.closest('.drop-anchor'))) {
-            hideDropLine();
-            hideInside();
-        }
+        if (!dragCtx) return;
+        // 拖到列表外（含舞台）也不判成「禁止」，拖拽视觉与横线继续跟随
+        e.preventDefault();
+        const onRow = e.target && e.target.closest && e.target.closest('.drop-anchor');
+        if (!onRow) followPointer(e.clientX, e.clientY);
     }, true);
 
     function startDragScroll() {
@@ -203,7 +224,6 @@
     function cleanupDrag() {
         hideDropLine();
         hideInside();
-        stopGhost();
         stopDragScroll();
         if (dragCtx && dragCtx.row) dragCtx.row.classList.remove('drag-sort-source');
         document.querySelectorAll('.drop-target').forEach((el) => el.classList.remove('drop-target'));
@@ -284,6 +304,8 @@
         const pp = parentPath || '';
         const ax = o.axis === 'x' ? 'x' : 'y';   // 横向容器（底部 Tab 栏）传 'x'：插入线为竖线
         const zoneTarget = !!o.isZone;           // 目标行是分区 Tab：item 拖拽交给 makeMoveTarget
+        const info = { node, siblings: siblings || [], parentPath: pp, host, ax, zoneTarget, onChange };
+        row._sortInfo = info;                     // 供「列表外横线跟随」按纵坐标找最近行
         row.draggable = true;
         row.classList.add('drop-anchor');
         if (host !== row) host.classList.add('drop-anchor');
@@ -293,13 +315,9 @@
             cleanupDrag();
             dragCtx = { node, siblings: siblings || [], parentPath: pp, isZone: !pp, row, onChange };
             e.dataTransfer.effectAllowed = 'move';
-            hideNativeDragImage(e.dataTransfer);
             try { e.dataTransfer.setData('text/plain', node.path || ''); } catch (err) { /* 兜底：不允许 setData 也照常拖 */ }
-            // dragstart 里部分浏览器的 clientX/Y 为 0，退回行内坐标
-            const r0 = row.getBoundingClientRect();
-            startGhost(row, e.clientX || (r0.left + 40), e.clientY || (r0.top + r0.height / 2));
             startDragScroll();
-            // 延迟半透明，避免影响 ghost 起始位置
+            // 延迟半透明：先让浏览器按原样生成拖拽残影
             setTimeout(() => { if (dragCtx && dragCtx.row === row) row.classList.add('drag-sort-source'); }, 0);
         });
         row.addEventListener('dragover', (e) => {
@@ -321,22 +339,10 @@
                 dragCtx.targetSiblings = [];
                 return;
             }
-            hideInside();
-            dragCtx.inside = false;
             const after = ax === 'x'
                 ? (e.clientX - rect.left) > rect.width / 2
                 : dy > rect.height / 2;
-            dragCtx.target = node;
-            dragCtx.after = after;
-            dragCtx.targetSiblings = siblings || [];
-            dragCtx.targetParent = pp;
-            hideDropLine();
-            const line = document.createElement('div');
-            line.className = ax === 'x'
-                ? 'drop-line drop-line-x ' + (after ? 'drop-line-right' : 'drop-line-left')
-                : 'drop-line ' + (after ? 'drop-line-bottom' : 'drop-line-top');
-            host.appendChild(line);
-            dropLine = line;
+            placeLine(info, after);
         });
         row.addEventListener('drop', (e) => {
             if (!acceptDrop(pp) || dragCtx.node === node) return;
