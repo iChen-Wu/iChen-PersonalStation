@@ -108,7 +108,7 @@
          都重写）；apps/ 根层不接受 item 落位（会变成新分区）——跨分区走 Tab 落点
          （见 makeMoveTarget）；
        - 拖到列表外（舞台）：插入横线照样按指针纵坐标跟随到最近的行，不在列表外
-         把拖拽判成「禁止」；列表外松手不落位（落点仍以列表行区间为准）；
+         把拖拽判成「禁止」；在列表外松手也按当前横线指示的落点提交；
        - 拖动时指针压到可滚动容器上/下缘（或越出范围），容器按纵坐标持续滚动。
        插入线宿主可单独指定——左侧树的文件夹行把线画在整个折叠盒的底缘，
        而不是文件夹行自身的下缘（后者在展开时看着像「插进文件夹内部」，语义不对）。 */
@@ -198,6 +198,17 @@
         const onRow = e.target && e.target.closest && e.target.closest('.drop-anchor');
         if (!onRow) followPointer(e.clientX, e.clientY);
     }, true);
+
+    /* 在列表外松手（舞台等）：行内没有 drop 处理，这里按当前横线指示的落点提交。
+       行内 drop 与分区 Tab 的 drop 都已 stopPropagation，故不会重复提交。 */
+    document.addEventListener('drop', (e) => {
+        if (!dragCtx || !dragCtx.target) return;
+        if (!acceptDrop(dragCtx.targetParent || '')) return;
+        e.preventDefault();
+        const ctx = dragCtx;
+        cleanupDrag();
+        commitDrop(ctx);
+    });
 
     function startDragScroll() {
         if (dragScroll.timer) return;
