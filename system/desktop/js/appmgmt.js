@@ -76,31 +76,6 @@
         if (!(r && r.ok)) toast(false, '', '图标设置失败', r);
     }
 
-    /* ---------- 同父级排序（上移 / 下移） ---------- */
-    function makeMove(nodes, node, parentPath, onChange) {
-        const list = nodes || [];
-        const i = list.findIndex((n) => n.path === node.path);
-        const move = async (delta) => {
-            if (i < 0) return;
-            const j = i + delta;
-            if (j < 0 || j >= list.length) {
-                if (iChen.UI) iChen.UI.showToast(delta < 0 ? '已经在最前面' : '已经在最后面');
-                return;
-            }
-            const arr = list.map((n) => n.path);
-            arr.splice(i, 1);
-            arr.splice(j, 0, list[i].path);
-            const r = await iChen.PyAPI.reorderNodes(parentPath, arr);
-            if (r && r.ok) {
-                if (iChen.UI) iChen.UI.showToast('排序已更新');
-                (onChange || afterChange)();
-            } else {
-                toast(false, '', '排序失败', r);
-            }
-        };
-        return { up: () => move(-1), down: () => move(1) };
-    }
-
     /* ---------- 拖拽排序 / 移动：拖动行时目标位置显示插入横线，松手落位 ----------
        - 同父级：纯排序，整表路径交给 reorder_nodes 写 order=1..N；
        - 任意层级进出：拖到文件夹行中部＝移入该文件夹；拖到任意行的上/下缘＝移到
@@ -500,10 +475,9 @@
             if (r && r.ok) render();
         };
         const setIcon = () => applyFolderIcon(node, afterChange);
-        const move = makeMove(siblings, node, parentPath, afterChange);
         makeSortable(item, siblings, node, parentPath, afterChange);
 
-        // 右键菜单：新建 / 重命名 / 描述 / 图标 / 排序 / 删除
+        // 右键菜单：新建 / 重命名 / 描述 / 图标 / 删除（排序交给拖拽行）
         item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -522,8 +496,6 @@
                 { label: '重命名', action: rename },
                 { label: '修改描述', action: editDesc },
                 { label: '修改图标', action: setIcon },
-                { label: '上移', action: move.up },
-                { label: '下移', action: move.down },
                 { label: '删除文件夹', danger: true, action: () => deleteFolder(node, isZone) },
             ], e.clientX, e.clientY, item);
         });
@@ -614,10 +586,9 @@
         addBtn(item, '打开目录', '在资源管理器中打开', a.openFolder);
         addBtn(item, '卸载', '删除该 App 的目录', a.uninstall, true);
 
-        const move = makeMove(siblings, app, parentPath, afterChange);
         makeSortable(item, siblings, app, parentPath, afterChange);
 
-        // 右键菜单（与按钮同动作）
+        // 右键菜单（与按钮同动作；排序交给拖拽，不再提供上移 / 下移）
         item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -626,8 +597,6 @@
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
-                { label: '上移', action: move.up },
-                { label: '下移', action: move.down },
                 { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '打开目录', action: a.openFolder },
                 { label: '卸载', danger: true, action: a.uninstall },
@@ -922,7 +891,6 @@
         makeAppActions,    // 供左侧列表 App 右键菜单复用
         applyAppIcon,      // 图标预设弹窗 → App（左侧列表右键复用）
         applyFolderIcon,   // 图标预设弹窗 → 文件夹（左侧列表右键复用）
-        makeMove,          // 同父级上移 / 下移（左侧列表右键复用）
         makeSortable,      // 拖拽排序：插入横线 + 松手落位（左侧列表行复用）
         makeMoveTarget,    // 分区 Tab 作为「移动到该分区」的拖拽落点（shell.js 复用）
         showNewMenu,       // 供 App 管理「新建」按钮 & 左侧空白处右键复用

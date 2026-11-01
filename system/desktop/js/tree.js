@@ -210,13 +210,10 @@
             const app = appRow._node;
             const afterChange = () => { if (iChen.Shell) iChen.Shell.reload(); };
             const a = iChen.AppMgmt.makeAppActions(app, afterChange);
-            const move = iChen.AppMgmt.makeMove(appRow._siblings, app, appRow._parentPath, afterChange);
             iChen.UI.showContextMenu([
                 { label: '移动', action: a.move },
                 { label: '重命名', action: a.rename },
                 { label: '修改图标', action: a.setIcon },
-                { label: '上移', action: move.up },
-                { label: '下移', action: move.down },
                 { label: '导出 miniapp', action: a.exportMiniapp },
                 { label: '删除', action: a.uninstall, danger: true },
             ], e.clientX, e.clientY, appRow);
@@ -236,7 +233,6 @@
                 if (r && r.ok) afterChange();
             };
             const setIcon = () => iChen.AppMgmt.applyFolderIcon(node, afterChange);
-            const move = iChen.AppMgmt.makeMove(folderRow._siblings, node, folderRow._parentPath, afterChange);
             iChen.UI.showContextMenu([
                 {
                     label: '新建 App',
@@ -251,8 +247,6 @@
                 { label: '新建文件夹', action: () => iChen.AppMgmt.newFolder(node.path) },
                 { label: '重命名', action: rename },
                 { label: '修改图标', action: setIcon },
-                { label: '上移', action: move.up },
-                { label: '下移', action: move.down },
                 { label: '删除文件夹', danger: true, action: () => iChen.AppMgmt.deleteFolder(node, false, afterChange) },
             ], e.clientX, e.clientY, folderRow);
             return;
